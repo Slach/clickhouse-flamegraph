@@ -1,0 +1,59 @@
+FROM ubuntu:18.04
+
+ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
+ARG version=19.13.1.*
+ARG gosu_ver=1.10
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        apt-transport-https \
+        dirmngr \
+        gnupg \
+    && mkdir -p /etc/apt/sources.list.d \
+    && apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get install --allow-unauthenticated --yes --no-install-recommends \
+#            clickhouse-common-static=$version \
+#            clickhouse-client=$version \
+#            clickhouse-server=$version \
+            libgcc-7-dev \
+            locales \
+            tzdata \
+            wget \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-common-static-dbg_19.14.1.1284_amd64.deb \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-common-static_19.14.1.1284_amd64.deb \
+    && df -h && dpkg -i clickhouse-common-static*.deb && rm -rfv clickhouse-common-static*.deb \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-client_19.14.1.1284_all.deb \
+    && df -h && dpkg -i clickhouse-client*.deb  && rm -rfv clickhouse-client*.deb \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-server_19.14.1.1284_all.deb \
+    && df -h && dpkg -i clickhouse-server*.deb && rm -rfv clickhouse-server*.deb \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
+    && apt-get clean
+
+ADD https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-amd64 /bin/gosu
+
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+
+RUN mkdir /docker-entrypoint-initdb.d
+
+COPY docker_related_config.xml /etc/clickhouse-server/config.d/
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x \
+    /entrypoint.sh \
+    /bin/gosu
+
+EXPOSE 9000 8123 9009
+VOLUME /var/lib/clickhouse
+
+ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+

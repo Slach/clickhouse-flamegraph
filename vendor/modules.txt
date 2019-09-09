@@ -1,0 +1,57 @@
+# bitbucket.org/clickhouse_pro/components v0.0.0-20180208070017-8c55b42c9de7
+bitbucket.org/clickhouse_pro/components/cfg
+bitbucket.org/clickhouse_pro/components/chpool
+bitbucket.org/clickhouse_pro/components/helpers
+bitbucket.org/clickhouse_pro/components/stacktrace
+# github.com/BurntSushi/toml v0.3.1
+github.com/BurntSushi/toml
+# github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
+github.com/araddon/dateparse
+# github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58
+github.com/cloudflare/golz4
+# github.com/golang/protobuf v1.2.0
+github.com/golang/protobuf/proto
+# github.com/google/go-querystring v1.0.0
+github.com/google/go-querystring/query
+# github.com/jinzhu/configor v1.1.1
+github.com/jinzhu/configor
+# github.com/kshvakov/clickhouse v1.3.11
+github.com/kshvakov/clickhouse
+github.com/kshvakov/clickhouse/lib/binary
+github.com/kshvakov/clickhouse/lib/cityhash102
+github.com/kshvakov/clickhouse/lib/column
+github.com/kshvakov/clickhouse/lib/data
+github.com/kshvakov/clickhouse/lib/leakypool
+github.com/kshvakov/clickhouse/lib/lz4
+github.com/kshvakov/clickhouse/lib/protocol
+github.com/kshvakov/clickhouse/lib/types
+github.com/kshvakov/clickhouse/lib/writebuffer
+# github.com/levigross/grequests v0.0.0-20190130132859-37c80f76a0da
+github.com/levigross/grequests
+# github.com/rs/zerolog v1.15.0
+github.com/rs/zerolog
+github.com/rs/zerolog/internal/cbor
+github.com/rs/zerolog/internal/json
+github.com/rs/zerolog/log
+# github.com/samuel/go-zookeeper v0.0.0-20190810000440-0ceca61e4d75
+github.com/samuel/go-zookeeper/zk
+# github.com/urfave/cli v1.21.0
+github.com/urfave/cli
+# golang.org/x/net v0.0.0-20190311183353-d8887717615a
+golang.org/x/net/context
+golang.org/x/net/context/ctxhttp
+golang.org/x/net/publicsuffix
+# golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
+golang.org/x/oauth2
+golang.org/x/oauth2/internal
+golang.org/x/oauth2/yandex
+# google.golang.org/appengine v1.4.0
+google.golang.org/appengine/internal
+google.golang.org/appengine/internal/base
+google.golang.org/appengine/internal/datastore
+google.golang.org/appengine/internal/log
+google.golang.org/appengine/internal/remote_api
+google.golang.org/appengine/internal/urlfetch
+google.golang.org/appengine/urlfetch
+# gopkg.in/yaml.v2 v2.2.2
+gopkg.in/yaml.v2

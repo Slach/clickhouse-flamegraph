@@ -1,0 +1,22 @@
+version: '2'
+services:
+  clickhouse:
+    build:
+      dockerfile: Docker-master
+      context: docker/clickhouse
+    volumes:
+      - ./docker/clickhouse/profiling.xml:/etc/clickhouse-server/users.d/profiling.xml
+    ports:
+      - 9000:9000
+  clickhouse-flamegraph:
+    image: clickhousepro/clickhouse-flamegraph
+    volumes:
+      - ./:/go/src/github.com/Slach/clickhouse-flamegraph
+      - /tmp/:/tmp/
+    build:
+      context: .
+      dockerfile: docker/clickhouse-flamegraph/Dockerfile
+    links:
+      - clickhouse
+
+ 

@@ -1,0 +1,11 @@
+<yandex>
+    <profiles>
+        <default>
+            <log_queries>1</log_queries>
+            <allow_introspection_functions>1</allow_introspection_functions>
+            <!-- cluster wide 25 times per second sampling profiler -->
+            <query_profiler_real_time_period_ns>40000000</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>40000000</query_profiler_cpu_time_period_ns>
+        </default>
+    </profiles>
+</yandex>

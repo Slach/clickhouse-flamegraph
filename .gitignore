@@ -1,3 +1,10 @@
+.idea/
+.vagrant/
+flame-graphs/
+
+*.log
+*.a
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
