@@ -46,10 +46,10 @@ Vagrant.configure(2) do |config|
     grep -q -F 'export GOROOT=$GOROOT' /home/vagrant/.bashrc || echo "export GOROOT=$GOROOT" >> /home/vagrant/.bashrc
     grep -q -F 'export GOROOT=$GOROOT' /root/.bashrc         || echo "export GOROOT=$GOROOT" >> /root/.bashrc
 
-    apt-get install -y docker-ce
-    apt-get install -y clickhouse-client
-    apt-get install -y python-pip
-    apt-get install -y htop ethtool mc
+    apt-get install --no-install-recommends -y docker-ce
+    apt-get install --no-install-recommends -y clickhouse-client
+    apt-get install --no-install-recommends -y python-pip
+    apt-get install --no-install-recommends -y htop ethtool mc curl wget
 
     python -m pip install -U pip
     pip install -U docker-compose
@@ -57,8 +57,23 @@ Vagrant.configure(2) do |config|
     ln -nsfv /usr/lib/go-1.13/bin/go /usr/bin/go
     ln -nsfv /vagrant /home/ubuntu/go/src/github.com/Slach/clickhouse-flamegraph
 
+    rm -rf /opt/flamegraph && mkdir -p /opt/flamegraph/
     git clone https://github.com/brendangregg/FlameGraph.git /opt/flamegraph/
     ln -vsf /opt/flamegraph/flamegraph.pl /usr/bin/flamegraph.pl
+
+    goreleaser_urls=$(curl -sL https://github.com/goreleaser/goreleaser/releases/latest | grep href | grep -E "amd64\\.deb|\\.txt" | cut -d '"' -f 2)
+    echo "$goreleaser_urls" > /tmp/goreleaser_urls.txt
+    sed -i -e "s/^\\/goreleaser/https:\\/\\/github.com\\/goreleaser/" /tmp/goreleaser_urls.txt
+    wget -nv -c -i /tmp/goreleaser_urls.txt
+    grep amd64.deb goreleaser_checksums.txt | sha256sum
+    dpkg -i $(cat goreleaser*checksums.txt | grep amd64.deb | cut -d " " -f 2-)
+
+    nfpm_urls=$(curl -sL https://github.com/goreleaser/nfpm/releases/latest | grep href | grep -E "amd64\\.deb|\\.txt" | cut -d '"' -f 2)
+    echo "$nfpm_urls" > /tmp/nfpm_urls.txt
+    sed -i -e "s/^\\/goreleaser/https:\\/\\/github.com\\/goreleaser/" /tmp/nfpm_urls.txt
+    wget -nv -c -i /tmp/nfpm_urls.txt
+    grep amd64.deb nfpm*checksums.txt | sha256sum
+    dpkg -i $(cat nfpm*checksums.txt | grep amd64.deb | cut -d " " -f 2-)
 
     cd /vagrant/
     docker-compose down
