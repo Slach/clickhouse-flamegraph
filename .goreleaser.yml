@@ -47,7 +47,5 @@ release:
     owner: "{{.Env.GITHUB_LOGIN}}"
     name: clickhouse-flamegraph
   prerelease: auto
-archives:
-  skip: true
 changelog:
   skip: false
