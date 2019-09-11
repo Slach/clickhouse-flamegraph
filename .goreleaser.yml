@@ -1,6 +1,7 @@
 project_name: clickhouse-flamegraph
 before:
   hooks:
+    - rm -rf ./dist/
     - go mod tidy
 builds:
   -
