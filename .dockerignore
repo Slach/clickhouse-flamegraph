@@ -1,2 +1,5 @@
-.vagrant/
+.release_env
 .idea/
+.vagrant/
+flame-graphs/
+dist/
