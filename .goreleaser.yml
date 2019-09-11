@@ -1,12 +1,53 @@
-# .goreleaser.yml
-# Build customization
-project_name: metrika2clickhouse
+project_name: clickhouse-flamegraph
+before:
+  hooks:
+    - go mod tidy
 builds:
-  - main: main.go
-    binary: metrika2clickhouse
+  -
+    id: clickhouse-flamegraph
+    main: main.go
+    binary: clickhouse-flamegraph
     goos:
       - windows
       - darwin
       - linux
     goarch:
       - amd64
+checksum:
+  name_template: "{{ .ProjectName }}_checksums.txt"
+  algorithm: sha256
+
+nfpms:
+  -
+    id: clickhouse-flamegraph
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - clickhouse-flamegraph
+    homepage: https://github.com/Slach/clickhouse-flamegraph
+    maintainer: Slach <bloodjazman@gmail.com>
+    description: command line utility for visualizing clickhouse system.trace_log as flamegraph
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    dependencies:
+      - perl
+    bindir: /usr/bin
+    epoch: 1
+    empty_folders:
+      - /var/log/clickhouse-flamegraph
+    files:
+      "/usr/bin/flamegraph.pl": "/usr/bin/flamegraph.pl"
+    overrides:
+      rpm:
+        replacements:
+          amd64: x86_64
+        name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}"
+release:
+  github:
+    owner: "{{.Env.GITHUB_LOGIN}}"
+    name: clickhouse-flamegraph
+  prerelease: auto
+
+changelog:
+  skip: false

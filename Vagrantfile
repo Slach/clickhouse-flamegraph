@@ -5,21 +5,15 @@ Vagrant.configure(2) do |config|
   config.vm.box_check_update = false
 
   config.vm.define :clickhouse_flamegraph do |clickhouse_flamegraph|
-        clickhouse_flamegraph.vm.network "private_network", ip: "172.16.2.77"
-        clickhouse_flamegraph.vm.host_name = "local-clickhouse-clickhouse-pro"
+    clickhouse_flamegraph.vm.network "private_network", ip: "172.16.2.77"
+    clickhouse_flamegraph.vm.host_name = "local-flamegraph-clickhouse-pro"
   end
 
-  # Provider-specific configuration so you can fine-tune various
-  # backing providers for Vagrant. These expose provider-specific options.
-  # Example for VirtualBox:
-  #
   config.vm.provider "virtualbox" do |vb|
-    # Display the VirtualBox GUI when booting the machine
     vb.gui = false
-
-    # Customize the amount of memory on the VM:
     vb.memory = "2048"
   end
+
   config.vm.provision "shell", inline: <<-SHELL
     set -xeuo pipefail
     sysctl net.ipv6.conf.all.forwarding=1
@@ -48,11 +42,14 @@ Vagrant.configure(2) do |config|
 
     apt-get install --no-install-recommends -y docker-ce
     apt-get install --no-install-recommends -y clickhouse-client
-    apt-get install --no-install-recommends -y python-pip
+    apt-get install --no-install-recommends -y python3-pip
     apt-get install --no-install-recommends -y htop ethtool mc curl wget
 
-    python -m pip install -U pip
-    pip install -U docker-compose
+    pip install -U setuptools
+    python3 -m pip install -U pip
+    rm -rf /usr/bin/pip3
+    pip3 install -U bump2version
+    pip3 install -U docker-compose
     mkdir -p /home/ubuntu/go/src/github.com/Slach/
     ln -nsfv /usr/lib/go-1.13/bin/go /usr/bin/go
     ln -nsfv /vagrant /home/ubuntu/go/src/github.com/Slach/clickhouse-flamegraph
