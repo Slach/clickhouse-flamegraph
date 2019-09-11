@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-docker login -u ${DOCKER_LOGIN} cloud.canister.io:5000
+docker login -u ${DOCKER_LOGIN} docker.io:5000
 docker-compose build clickhouse-flamegraph
 docker-compose up -d clickhouse-flamegraph
 sleep 1
