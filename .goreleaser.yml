@@ -44,7 +44,7 @@ nfpms:
         name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}"
 release:
   github:
-    owner: "{{.Env.GITHUB_LOGIN}}"
+    owner: Slach
     name: clickhouse-flamegraph
   prerelease: auto
 changelog:
