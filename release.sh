@@ -7,7 +7,7 @@ fi
 echo 1 > /proc/sys/vm/drop_caches
 source .release_env
 git config core.eol lf
-git config autocrlf input
+git config core.autocrlf input
 git config user.name "$GITHUB_LOGIN"
 git config user.email "$GITHUB_EMAIL"
 bump2version --verbose $1
