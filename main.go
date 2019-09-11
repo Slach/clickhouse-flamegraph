@@ -26,6 +26,7 @@ func main() {
 	app.Usage = "visualize clickhouse system.trace_log as flamegraph, based on https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194"
 	app.ArgsUsage = ""
 	app.HideHelp = false
+	app.Version = "2019.0.2"
 	app.Flags = []cli.Flag{
 		cli.IntFlag{
 			Name:  "width",
@@ -108,7 +109,7 @@ WHERE {where}
 SELECT 
 	query_id,
 	count() AS samples, 
-	arrayStringConcat(arrayReverse(arrayMap(x -> concat( addressToLine(x), '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack
+	arrayStringConcat(arrayReverse(arrayMap(x -> concat( demangle(addressToSymbol(x)), '#', addressToLine(x) ), trace)), ';') AS stack
 FROM system.trace_log
 WHERE {where}
 GROUP BY query_id, trace
