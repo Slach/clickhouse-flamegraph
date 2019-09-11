@@ -16,7 +16,6 @@ builds:
 checksum:
   name_template: "{{ .ProjectName }}_checksums.txt"
   algorithm: sha256
-
 nfpms:
   -
     id: clickhouse-flamegraph
@@ -48,6 +47,7 @@ release:
     owner: "{{.Env.GITHUB_LOGIN}}"
     name: clickhouse-flamegraph
   prerelease: auto
-
+archives:
+  skip: true
 changelog:
   skip: false

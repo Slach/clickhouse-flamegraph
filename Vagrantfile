@@ -43,7 +43,7 @@ Vagrant.configure(2) do |config|
     apt-get install --no-install-recommends -y docker-ce
     apt-get install --no-install-recommends -y clickhouse-client
     apt-get install --no-install-recommends -y python3-pip
-    apt-get install --no-install-recommends -y htop ethtool mc curl wget
+    apt-get install --no-install-recommends -y htop ethtool mc curl wget rpm
 
     pip install -U setuptools
     python3 -m pip install -U pip
