@@ -1,0 +1,1681 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="550" onload="init(evt)" viewBox="0 0 1200 550" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+	}
+
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+		}
+		else if (e.target.id == "unzoom") unzoom();
+		else if (e.target.id == "search") search_prompt();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Stack " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	}, false)
+
+	// functions
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+		return;
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+	}
+
+	// search
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)", "");
+			if (term != null) {
+				search(term)
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		var re = new RegExp(term);
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="550.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Clickhouse flame Graph</text>
+<text id="details" x="10.00" y="533" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="matched" x="1090.00" y="533" > </text>
+<g id="frames">
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:336#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (168 samples, 0.01%)</title><rect x="1164.4" y="373" width="0.1" height="15.0" fill="rgb(233,183,25)" rx="2" ry="2" />
+<text  x="1167.43" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#std::_Function_handler&lt;void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}&gt;::_M_invoke(std::_Any_data const&amp;) (1,722,554 samples, 89.04%)</title><rect x="10.8" y="389" width="1050.6" height="15.0" fill="rgb(206,40,43)" rx="2" ry="2" />
+<text  x="13.75" y="399.5" >/usr/include/c++/9/bits/atomic_base.h:551#std::_Function_handler&lt;void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}&gt;::_M_invoke(std::..</text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,350 samples, 0.12%)</title><rect x="1188.6" y="357" width="1.4" height="15.0" fill="rgb(236,68,46)" rx="2" ry="2" />
+<text  x="1191.57" y="367.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:297#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (767 samples, 0.04%)</title><rect x="1117.4" y="389" width="0.5" height="15.0" fill="rgb(220,70,18)" rx="2" ry="2" />
+<text  x="1120.42" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (935 samples, 0.05%)</title><rect x="1186.6" y="101" width="0.6" height="15.0" fill="rgb(244,138,15)" rx="2" ry="2" />
+<text  x="1189.60" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:255#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,789 samples, 0.09%)</title><rect x="1173.0" y="389" width="1.1" height="15.0" fill="rgb(229,127,31)" rx="2" ry="2" />
+<text  x="1176.02" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:252#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (730 samples, 0.04%)</title><rect x="1172.6" y="389" width="0.4" height="15.0" fill="rgb(214,63,41)" rx="2" ry="2" />
+<text  x="1175.58" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (1,024 samples, 0.05%)</title><rect x="1185.8" y="373" width="0.6" height="15.0" fill="rgb(251,213,10)" rx="2" ry="2" />
+<text  x="1188.81" y="383.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (248 samples, 0.01%)</title><rect x="1188.4" y="165" width="0.1" height="15.0" fill="rgb(236,198,24)" rx="2" ry="2" />
+<text  x="1191.35" y="175.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/Dwarf.cpp:635#DB::Dwarf::findAddress(unsigned long, DB::Dwarf::LocationInfo&amp;, DB::Dwarf::LocationInfoMode) const (455 samples, 0.02%)</title><rect x="1060.9" y="117" width="0.3" height="15.0" fill="rgb(207,191,0)" rx="2" ry="2" />
+<text  x="1063.92" y="127.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libc-2.27.so#syscall (1,917 samples, 0.10%)</title><rect x="1184.1" y="37" width="1.1" height="15.0" fill="rgb(236,193,31)" rx="2" ry="2" />
+<text  x="1187.07" y="47.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (417 samples, 0.02%)</title><rect x="10.4" y="261" width="0.3" height="15.0" fill="rgb(225,209,5)" rx="2" ry="2" />
+<text  x="13.43" y="271.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (1,400 samples, 0.07%)</title><rect x="1187.2" y="149" width="0.8" height="15.0" fill="rgb(244,35,23)" rx="2" ry="2" />
+<text  x="1190.17" y="159.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (221 samples, 0.01%)</title><rect x="1186.3" y="341" width="0.1" height="15.0" fill="rgb(205,8,35)" rx="2" ry="2" />
+<text  x="1189.30" y="351.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1471#libunwind::UnwindCursor&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::setInfoBasedOnIPRegister(bool) (230 samples, 0.01%)</title><rect x="1187.0" y="53" width="0.2" height="15.0" fill="rgb(215,112,33)" rx="2" ry="2" />
+<text  x="1190.02" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/Dwarf.cpp:743#DB::Dwarf::LineNumberVM::findAddress(unsigned long, DB::Dwarf::Path&amp;, unsigned long&amp;) (312 samples, 0.02%)</title><rect x="1061.2" y="85" width="0.2" height="15.0" fill="rgb(233,48,32)" rx="2" ry="2" />
+<text  x="1064.23" y="95.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:308#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (831 samples, 0.04%)</title><rect x="1161.5" y="373" width="0.5" height="15.0" fill="rgb(241,193,9)" rx="2" ry="2" />
+<text  x="1164.49" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:356#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (574 samples, 0.03%)</title><rect x="1145.4" y="389" width="0.4" height="15.0" fill="rgb(249,5,33)" rx="2" ry="2" />
+<text  x="1148.44" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1471#libunwind::UnwindCursor&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::setInfoBasedOnIPRegister(bool) (235 samples, 0.01%)</title><rect x="1187.5" y="69" width="0.2" height="15.0" fill="rgb(217,144,18)" rx="2" ry="2" />
+<text  x="1190.54" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:350#libunwind::EHHeaderParser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (330 samples, 0.02%)</title><rect x="1185.4" y="37" width="0.2" height="15.0" fill="rgb(244,103,36)" rx="2" ry="2" />
+<text  x="1188.39" y="47.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:301#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (587 samples, 0.03%)</title><rect x="1157.3" y="373" width="0.4" height="15.0" fill="rgb(241,216,15)" rx="2" ry="2" />
+<text  x="1160.30" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (199 samples, 0.01%)</title><rect x="1186.5" y="85" width="0.1" height="15.0" fill="rgb(215,166,53)" rx="2" ry="2" />
+<text  x="1189.48" y="95.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (2,615 samples, 0.14%)</title><rect x="1186.4" y="309" width="1.6" height="15.0" fill="rgb(228,117,39)" rx="2" ry="2" />
+<text  x="1189.43" y="319.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (248 samples, 0.01%)</title><rect x="1188.4" y="133" width="0.1" height="15.0" fill="rgb(253,121,53)" rx="2" ry="2" />
+<text  x="1191.35" y="143.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (414 samples, 0.02%)</title><rect x="1188.1" y="149" width="0.3" height="15.0" fill="rgb(215,94,40)" rx="2" ry="2" />
+<text  x="1191.10" y="159.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (414 samples, 0.02%)</title><rect x="1188.1" y="133" width="0.3" height="15.0" fill="rgb(213,170,13)" rx="2" ry="2" />
+<text  x="1191.10" y="143.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/Dwarf.cpp:612#DB::Dwarf::findLocation(unsigned long, std::basic_string_view&lt;char, std::char_traits&lt;char&gt; &gt;&amp;, DB::Dwarf::LocationInfo&amp;) const (351 samples, 0.02%)</title><rect x="1061.2" y="101" width="0.2" height="15.0" fill="rgb(210,57,33)" rx="2" ry="2" />
+<text  x="1064.21" y="111.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (2,347 samples, 0.12%)</title><rect x="1188.6" y="117" width="1.4" height="15.0" fill="rgb(208,0,49)" rx="2" ry="2" />
+<text  x="1191.57" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl() (754 samples, 0.04%)</title><rect x="1188.0" y="453" width="0.5" height="15.0" fill="rgb(214,228,0)" rx="2" ry="2" />
+<text  x="1191.04" y="463.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/WriteBufferFromFileDescriptorDiscardOnFailure.cpp:18#DB::WriteBufferFromFileDescriptorDiscardOnFailure::nextImpl() (2,182 samples, 0.11%)</title><rect x="1188.7" y="53" width="1.3" height="15.0" fill="rgb(244,161,52)" rx="2" ry="2" />
+<text  x="1191.67" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:337#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,501 samples, 0.08%)</title><rect x="1158.7" y="373" width="0.9" height="15.0" fill="rgb(247,102,13)" rx="2" ry="2" />
+<text  x="1161.69" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (3,225 samples, 0.17%)</title><rect x="1183.8" y="405" width="2.0" height="15.0" fill="rgb(219,65,53)" rx="2" ry="2" />
+<text  x="1186.84" y="415.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (754 samples, 0.04%)</title><rect x="1188.0" y="309" width="0.5" height="15.0" fill="rgb(245,7,7)" rx="2" ry="2" />
+<text  x="1191.04" y="319.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:259#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (879 samples, 0.05%)</title><rect x="1174.1" y="389" width="0.6" height="15.0" fill="rgb(205,210,46)" rx="2" ry="2" />
+<text  x="1177.11" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (1,400 samples, 0.07%)</title><rect x="1187.2" y="117" width="0.8" height="15.0" fill="rgb(209,125,45)" rx="2" ry="2" />
+<text  x="1190.17" y="127.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (754 samples, 0.04%)</title><rect x="1188.0" y="373" width="0.5" height="15.0" fill="rgb(213,63,43)" rx="2" ry="2" />
+<text  x="1191.04" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,644 samples, 0.14%)</title><rect x="1186.4" y="421" width="1.6" height="15.0" fill="rgb(214,87,18)" rx="2" ry="2" />
+<text  x="1189.43" y="431.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (754 samples, 0.04%)</title><rect x="1188.0" y="293" width="0.5" height="15.0" fill="rgb(219,16,46)" rx="2" ry="2" />
+<text  x="1191.04" y="303.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,644 samples, 0.14%)</title><rect x="1186.4" y="453" width="1.6" height="15.0" fill="rgb(244,63,6)" rx="2" ry="2" />
+<text  x="1189.43" y="463.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (394 samples, 0.02%)</title><rect x="10.4" y="85" width="0.3" height="15.0" fill="rgb(223,189,5)" rx="2" ry="2" />
+<text  x="13.44" y="95.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (1,721,602 samples, 88.99%)</title><rect x="10.8" y="229" width="1050.1" height="15.0" fill="rgb(219,100,12)" rx="2" ry="2" />
+<text  x="13.75" y="239.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:390#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (483 samples, 0.02%)</title><rect x="1169.8" y="373" width="0.3" height="15.0" fill="rgb(221,133,16)" rx="2" ry="2" />
+<text  x="1172.80" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (495 samples, 0.03%)</title><rect x="10.4" y="421" width="0.3" height="15.0" fill="rgb(254,134,38)" rx="2" ry="2" />
+<text  x="13.43" y="431.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/memcpy.h:13#memcpy (582 samples, 0.03%)</title><rect x="1185.9" y="101" width="0.4" height="15.0" fill="rgb(250,51,15)" rx="2" ry="2" />
+<text  x="1188.92" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:309#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (476 samples, 0.02%)</title><rect x="1162.0" y="373" width="0.3" height="15.0" fill="rgb(254,51,37)" rx="2" ry="2" />
+<text  x="1165.00" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (417 samples, 0.02%)</title><rect x="10.4" y="181" width="0.3" height="15.0" fill="rgb(247,163,50)" rx="2" ry="2" />
+<text  x="13.43" y="191.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/impl/FastMemcpy.h:96#memcpy (206 samples, 0.01%)</title><rect x="1186.5" y="149" width="0.1" height="15.0" fill="rgb(216,77,28)" rx="2" ry="2" />
+<text  x="1189.48" y="159.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (754 samples, 0.04%)</title><rect x="1188.0" y="325" width="0.5" height="15.0" fill="rgb(226,51,54)" rx="2" ry="2" />
+<text  x="1191.04" y="335.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:318#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (196 samples, 0.01%)</title><rect x="1162.6" y="373" width="0.1" height="15.0" fill="rgb(229,134,50)" rx="2" ry="2" />
+<text  x="1165.56" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (754 samples, 0.04%)</title><rect x="1188.0" y="245" width="0.5" height="15.0" fill="rgb(217,88,2)" rx="2" ry="2" />
+<text  x="1191.04" y="255.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (2,347 samples, 0.12%)</title><rect x="1188.6" y="149" width="1.4" height="15.0" fill="rgb(229,28,50)" rx="2" ry="2" />
+<text  x="1191.57" y="159.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:248#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (197 samples, 0.01%)</title><rect x="1148.5" y="389" width="0.2" height="15.0" fill="rgb(248,100,0)" rx="2" ry="2" />
+<text  x="1151.54" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:341#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (549 samples, 0.03%)</title><rect x="1165.3" y="373" width="0.3" height="15.0" fill="rgb(217,165,54)" rx="2" ry="2" />
+<text  x="1168.27" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:276#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (360 samples, 0.02%)</title><rect x="1154.9" y="373" width="0.2" height="15.0" fill="rgb(243,69,52)" rx="2" ry="2" />
+<text  x="1157.91" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (200,236 samples, 10.35%)</title><rect x="1061.5" y="453" width="122.1" height="15.0" fill="rgb(234,41,37)" rx="2" ry="2" />
+<text  x="1064.48" y="463.5" >/build/obj-x86_..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:412#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseFDEInstructions(libunwind::LocalAddressSpace&amp;, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info const&amp;, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info const&amp;, unsigned long, int, libunwind::PrologInfo*) (276 samples, 0.01%)</title><rect x="1187.4" y="53" width="0.1" height="15.0" fill="rgb(228,154,54)" rx="2" ry="2" />
+<text  x="1190.37" y="63.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (221 samples, 0.01%)</title><rect x="1186.3" y="229" width="0.1" height="15.0" fill="rgb(208,155,17)" rx="2" ry="2" />
+<text  x="1189.30" y="239.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (378 samples, 0.02%)</title><rect x="10.5" y="69" width="0.2" height="15.0" fill="rgb(233,9,9)" rx="2" ry="2" />
+<text  x="13.45" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (2,347 samples, 0.12%)</title><rect x="1188.6" y="229" width="1.4" height="15.0" fill="rgb(223,186,33)" rx="2" ry="2" />
+<text  x="1191.57" y="239.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (803 samples, 0.04%)</title><rect x="1185.8" y="181" width="0.5" height="15.0" fill="rgb(235,196,0)" rx="2" ry="2" />
+<text  x="1188.81" y="191.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl() (417 samples, 0.02%)</title><rect x="10.4" y="341" width="0.3" height="15.0" fill="rgb(213,167,45)" rx="2" ry="2" />
+<text  x="13.43" y="351.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (3,132 samples, 0.16%)</title><rect x="1183.8" y="181" width="1.9" height="15.0" fill="rgb(215,77,14)" rx="2" ry="2" />
+<text  x="1186.84" y="191.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:375#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (586 samples, 0.03%)</title><rect x="1169.4" y="373" width="0.4" height="15.0" fill="rgb(210,118,11)" rx="2" ry="2" />
+<text  x="1172.45" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (1,721,602 samples, 88.99%)</title><rect x="10.8" y="117" width="1050.1" height="15.0" fill="rgb(217,108,0)" rx="2" ry="2" />
+<text  x="13.75" y="127.5" >/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libcommon/src/phdr_cache.cpp:77#dl_iterate_phdr (192 samples, 0.01%)</title><rect x="1187.9" y="53" width="0.1" height="15.0" fill="rgb(254,154,52)" rx="2" ry="2" />
+<text  x="1190.91" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl() (2,347 samples, 0.12%)</title><rect x="1188.6" y="341" width="1.4" height="15.0" fill="rgb(247,152,6)" rx="2" ry="2" />
+<text  x="1191.57" y="351.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (2,347 samples, 0.12%)</title><rect x="1188.6" y="213" width="1.4" height="15.0" fill="rgb(237,160,16)" rx="2" ry="2" />
+<text  x="1191.57" y="223.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (221 samples, 0.01%)</title><rect x="1186.3" y="245" width="0.1" height="15.0" fill="rgb(238,94,3)" rx="2" ry="2" />
+<text  x="1189.30" y="255.5" ></text>
+</g>
+<g >
+<title>all (1,934,558 samples, 100%)</title><rect x="10.0" y="501" width="1180.0" height="15.0" fill="rgb(211,198,16)" rx="2" ry="2" />
+<text  x="13.00" y="511.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (221 samples, 0.01%)</title><rect x="1186.3" y="325" width="0.1" height="15.0" fill="rgb(243,113,15)" rx="2" ry="2" />
+<text  x="1189.30" y="335.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:277#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (255 samples, 0.01%)</title><rect x="1155.1" y="373" width="0.2" height="15.0" fill="rgb(225,206,11)" rx="2" ry="2" />
+<text  x="1158.13" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (2,615 samples, 0.14%)</title><rect x="1186.4" y="213" width="1.6" height="15.0" fill="rgb(216,35,32)" rx="2" ry="2" />
+<text  x="1189.43" y="223.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (754 samples, 0.04%)</title><rect x="1188.0" y="181" width="0.5" height="15.0" fill="rgb(216,174,43)" rx="2" ry="2" />
+<text  x="1191.04" y="191.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1983#unw_step (340 samples, 0.02%)</title><rect x="10.5" y="53" width="0.2" height="15.0" fill="rgb(221,98,48)" rx="2" ry="2" />
+<text  x="13.45" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (2,615 samples, 0.14%)</title><rect x="1186.4" y="229" width="1.6" height="15.0" fill="rgb(230,138,31)" rx="2" ry="2" />
+<text  x="1189.43" y="239.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfInstructions.hpp:180#libunwind::DwarfInstructions&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::stepWithDwarf(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, libunwind::Registers_x86_64&amp;) (580 samples, 0.03%)</title><rect x="1186.6" y="53" width="0.4" height="15.0" fill="rgb(240,54,11)" rx="2" ry="2" />
+<text  x="1189.64" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (1,721,602 samples, 88.99%)</title><rect x="10.8" y="149" width="1050.1" height="15.0" fill="rgb(249,206,21)" rx="2" ry="2" />
+<text  x="13.75" y="159.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned lon..</text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#std::_Function_handler&lt;void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}&gt;::_M_invoke(std::_Any_data const&amp;) (495 samples, 0.03%)</title><rect x="10.4" y="453" width="0.3" height="15.0" fill="rgb(223,154,20)" rx="2" ry="2" />
+<text  x="13.43" y="463.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (248 samples, 0.01%)</title><rect x="1188.4" y="149" width="0.1" height="15.0" fill="rgb(245,187,45)" rx="2" ry="2" />
+<text  x="1191.35" y="159.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (1,721,601 samples, 88.99%)</title><rect x="10.8" y="85" width="1050.1" height="15.0" fill="rgb(241,7,9)" rx="2" ry="2" />
+<text  x="13.75" y="95.5" >/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; co..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:282#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (452 samples, 0.02%)</title><rect x="1155.4" y="373" width="0.2" height="15.0" fill="rgb(205,118,19)" rx="2" ry="2" />
+<text  x="1158.36" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:288#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,096 samples, 0.06%)</title><rect x="1156.6" y="373" width="0.7" height="15.0" fill="rgb(205,106,40)" rx="2" ry="2" />
+<text  x="1159.63" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:78#unw_get_reg (13,411 samples, 0.69%)</title><rect x="1175.4" y="437" width="8.2" height="15.0" fill="rgb(229,18,37)" rx="2" ry="2" />
+<text  x="1178.43" y="447.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (2,615 samples, 0.14%)</title><rect x="1186.4" y="197" width="1.6" height="15.0" fill="rgb(215,9,36)" rx="2" ry="2" />
+<text  x="1189.43" y="207.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (394 samples, 0.02%)</title><rect x="10.4" y="117" width="0.3" height="15.0" fill="rgb(236,16,54)" rx="2" ry="2" />
+<text  x="13.44" y="127.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (417 samples, 0.02%)</title><rect x="10.4" y="133" width="0.3" height="15.0" fill="rgb(234,229,8)" rx="2" ry="2" />
+<text  x="13.43" y="143.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (754 samples, 0.04%)</title><rect x="1188.0" y="277" width="0.5" height="15.0" fill="rgb(249,167,29)" rx="2" ry="2" />
+<text  x="1191.04" y="287.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (221 samples, 0.01%)</title><rect x="1186.3" y="213" width="0.1" height="15.0" fill="rgb(215,122,52)" rx="2" ry="2" />
+<text  x="1189.30" y="223.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (2,347 samples, 0.12%)</title><rect x="1188.6" y="245" width="1.4" height="15.0" fill="rgb(226,196,39)" rx="2" ry="2" />
+<text  x="1191.57" y="255.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (417 samples, 0.02%)</title><rect x="10.4" y="149" width="0.3" height="15.0" fill="rgb(240,159,47)" rx="2" ry="2" />
+<text  x="13.43" y="159.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl() (417 samples, 0.02%)</title><rect x="10.4" y="373" width="0.3" height="15.0" fill="rgb(226,139,34)" rx="2" ry="2" />
+<text  x="13.43" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:320#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (286 samples, 0.01%)</title><rect x="1162.7" y="373" width="0.1" height="15.0" fill="rgb(216,176,19)" rx="2" ry="2" />
+<text  x="1165.68" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/memcpy.h:13#memcpy (414 samples, 0.02%)</title><rect x="1188.1" y="165" width="0.3" height="15.0" fill="rgb(212,79,34)" rx="2" ry="2" />
+<text  x="1191.10" y="175.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (2,973 samples, 0.15%)</title><rect x="1183.9" y="101" width="1.8" height="15.0" fill="rgb(248,33,48)" rx="2" ry="2" />
+<text  x="1186.94" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl() (2,615 samples, 0.14%)</title><rect x="1186.4" y="405" width="1.6" height="15.0" fill="rgb(230,127,35)" rx="2" ry="2" />
+<text  x="1189.43" y="415.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (803 samples, 0.04%)</title><rect x="1185.8" y="213" width="0.5" height="15.0" fill="rgb(254,103,20)" rx="2" ry="2" />
+<text  x="1188.81" y="223.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl() (3,132 samples, 0.16%)</title><rect x="1183.8" y="389" width="1.9" height="15.0" fill="rgb(241,148,13)" rx="2" ry="2" />
+<text  x="1186.84" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (754 samples, 0.04%)</title><rect x="1188.0" y="197" width="0.5" height="15.0" fill="rgb(234,202,16)" rx="2" ry="2" />
+<text  x="1191.04" y="207.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (754 samples, 0.04%)</title><rect x="1188.0" y="213" width="0.5" height="15.0" fill="rgb(238,185,46)" rx="2" ry="2" />
+<text  x="1191.04" y="223.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (1,721,599 samples, 88.99%)</title><rect x="10.8" y="69" width="1050.1" height="15.0" fill="rgb(225,96,28)" rx="2" ry="2" />
+<text  x="13.76" y="79.5" >/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long)</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (1,247 samples, 0.06%)</title><rect x="1187.3" y="101" width="0.7" height="15.0" fill="rgb(249,177,37)" rx="2" ry="2" />
+<text  x="1190.26" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:250#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (2,671 samples, 0.14%)</title><rect x="1148.7" y="389" width="1.6" height="15.0" fill="rgb(234,107,6)" rx="2" ry="2" />
+<text  x="1151.66" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (3,132 samples, 0.16%)</title><rect x="1183.8" y="245" width="1.9" height="15.0" fill="rgb(225,223,32)" rx="2" ry="2" />
+<text  x="1186.84" y="255.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (2,347 samples, 0.12%)</title><rect x="1188.6" y="277" width="1.4" height="15.0" fill="rgb(254,171,12)" rx="2" ry="2" />
+<text  x="1191.57" y="287.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (1,721,603 samples, 88.99%)</title><rect x="10.8" y="261" width="1050.1" height="15.0" fill="rgb(222,161,16)" rx="2" ry="2" />
+<text  x="13.75" y="271.5" >/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read()</text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (417 samples, 0.02%)</title><rect x="10.4" y="325" width="0.3" height="15.0" fill="rgb(207,43,25)" rx="2" ry="2" />
+<text  x="13.43" y="335.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1847#libunwind::UnwindCursor&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::setInfoBasedOnIPRegister(bool) (192 samples, 0.01%)</title><rect x="1187.9" y="69" width="0.1" height="15.0" fill="rgb(213,87,26)" rx="2" ry="2" />
+<text  x="1190.91" y="79.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (218 samples, 0.01%)</title><rect x="1186.3" y="181" width="0.1" height="15.0" fill="rgb(252,30,8)" rx="2" ry="2" />
+<text  x="1189.30" y="191.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl() (803 samples, 0.04%)</title><rect x="1185.8" y="325" width="0.5" height="15.0" fill="rgb(231,24,1)" rx="2" ry="2" />
+<text  x="1188.81" y="335.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (844 samples, 0.04%)</title><rect x="1060.9" y="181" width="0.5" height="15.0" fill="rgb(211,180,25)" rx="2" ry="2" />
+<text  x="1063.92" y="191.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::worker(std::_List_iterator&lt;ThreadFromGlobalPool&gt;) (3,225 samples, 0.17%)</title><rect x="1183.8" y="485" width="2.0" height="15.0" fill="rgb(230,158,34)" rx="2" ry="2" />
+<text  x="1186.84" y="495.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (3,132 samples, 0.16%)</title><rect x="1183.8" y="277" width="1.9" height="15.0" fill="rgb(245,226,0)" rx="2" ry="2" />
+<text  x="1186.84" y="287.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (1,721,602 samples, 88.99%)</title><rect x="10.8" y="165" width="1050.1" height="15.0" fill="rgb(245,229,2)" rx="2" ry="2" />
+<text  x="13.75" y="175.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const</text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (803 samples, 0.04%)</title><rect x="1185.8" y="133" width="0.5" height="15.0" fill="rgb(241,59,41)" rx="2" ry="2" />
+<text  x="1188.81" y="143.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/WriteBufferFromFileDescriptorDiscardOnFailure.cpp:18#DB::WriteBufferFromFileDescriptorDiscardOnFailure::nextImpl() (299 samples, 0.02%)</title><rect x="1183.6" y="453" width="0.2" height="15.0" fill="rgb(213,105,6)" rx="2" ry="2" />
+<text  x="1186.61" y="463.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (417 samples, 0.02%)</title><rect x="10.4" y="213" width="0.3" height="15.0" fill="rgb(254,221,11)" rx="2" ry="2" />
+<text  x="13.43" y="223.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#std::_Function_handler&lt;void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}&gt;::_M_invoke(std::_Any_data const&amp;) (3,225 samples, 0.17%)</title><rect x="1183.8" y="469" width="2.0" height="15.0" fill="rgb(246,57,14)" rx="2" ry="2" />
+<text  x="1186.84" y="479.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (1,400 samples, 0.07%)</title><rect x="1187.2" y="133" width="0.8" height="15.0" fill="rgb(250,196,6)" rx="2" ry="2" />
+<text  x="1190.17" y="143.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (1,721,603 samples, 88.99%)</title><rect x="10.8" y="293" width="1050.1" height="15.0" fill="rgb(212,159,33)" rx="2" ry="2" />
+<text  x="13.75" y="303.5" >/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read()</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:340#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,176 samples, 0.06%)</title><rect x="1164.6" y="373" width="0.7" height="15.0" fill="rgb(251,212,4)" rx="2" ry="2" />
+<text  x="1167.56" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (844 samples, 0.04%)</title><rect x="1060.9" y="213" width="0.5" height="15.0" fill="rgb(247,63,50)" rx="2" ry="2" />
+<text  x="1063.92" y="223.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl() (2,644 samples, 0.14%)</title><rect x="1186.4" y="437" width="1.6" height="15.0" fill="rgb(209,22,41)" rx="2" ry="2" />
+<text  x="1189.43" y="447.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate() (2,350 samples, 0.12%)</title><rect x="1188.6" y="405" width="1.4" height="15.0" fill="rgb(253,188,17)" rx="2" ry="2" />
+<text  x="1191.57" y="415.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1985#unw_step (95,286 samples, 4.93%)</title><rect x="1117.3" y="421" width="58.1" height="15.0" fill="rgb(243,189,13)" rx="2" ry="2" />
+<text  x="1120.31" y="431.5" >/build..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl() (3,225 samples, 0.17%)</title><rect x="1183.8" y="421" width="2.0" height="15.0" fill="rgb(251,133,26)" rx="2" ry="2" />
+<text  x="1186.84" y="431.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (417 samples, 0.02%)</title><rect x="10.4" y="293" width="0.3" height="15.0" fill="rgb(215,47,16)" rx="2" ry="2" />
+<text  x="13.43" y="303.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;std::thread&gt;::worker(std::_List_iterator&lt;std::thread&gt;) (1,024 samples, 0.05%)</title><rect x="1185.8" y="485" width="0.6" height="15.0" fill="rgb(217,73,36)" rx="2" ry="2" />
+<text  x="1188.81" y="495.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::worker(std::_List_iterator&lt;ThreadFromGlobalPool&gt;) (1,024 samples, 0.05%)</title><rect x="1185.8" y="453" width="0.6" height="15.0" fill="rgb(238,137,35)" rx="2" ry="2" />
+<text  x="1188.81" y="463.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (2,347 samples, 0.12%)</title><rect x="1188.6" y="133" width="1.4" height="15.0" fill="rgb(223,184,37)" rx="2" ry="2" />
+<text  x="1191.57" y="143.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (1,024 samples, 0.05%)</title><rect x="1185.8" y="405" width="0.6" height="15.0" fill="rgb(223,211,20)" rx="2" ry="2" />
+<text  x="1188.81" y="415.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.h:150#ThreadFromGlobalPool::ThreadFromGlobalPool&lt;ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&gt;(ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&amp;&amp;)::{lambda()#1}::operator()() const (495 samples, 0.03%)</title><rect x="10.4" y="485" width="0.3" height="15.0" fill="rgb(225,158,4)" rx="2" ry="2" />
+<text  x="13.43" y="495.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl() (1,721,603 samples, 88.99%)</title><rect x="10.8" y="277" width="1050.1" height="15.0" fill="rgb(228,220,54)" rx="2" ry="2" />
+<text  x="13.75" y="287.5" >/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl()</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:335#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (415 samples, 0.02%)</title><rect x="1164.2" y="373" width="0.2" height="15.0" fill="rgb(238,31,44)" rx="2" ry="2" />
+<text  x="1167.18" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate() (1,024 samples, 0.05%)</title><rect x="1185.8" y="421" width="0.6" height="15.0" fill="rgb(252,89,29)" rx="2" ry="2" />
+<text  x="1188.81" y="431.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (221 samples, 0.01%)</title><rect x="1186.3" y="309" width="0.1" height="15.0" fill="rgb(241,127,22)" rx="2" ry="2" />
+<text  x="1189.30" y="319.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:228#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (777 samples, 0.04%)</title><rect x="1145.9" y="389" width="0.4" height="15.0" fill="rgb(206,135,42)" rx="2" ry="2" />
+<text  x="1148.86" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (3,132 samples, 0.16%)</title><rect x="1183.8" y="261" width="1.9" height="15.0" fill="rgb(244,161,30)" rx="2" ry="2" />
+<text  x="1186.84" y="271.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (754 samples, 0.04%)</title><rect x="1188.0" y="341" width="0.5" height="15.0" fill="rgb(231,124,54)" rx="2" ry="2" />
+<text  x="1191.04" y="351.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (2,291 samples, 0.12%)</title><rect x="1188.6" y="85" width="1.4" height="15.0" fill="rgb(240,33,29)" rx="2" ry="2" />
+<text  x="1191.60" y="95.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:301#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (14,822 samples, 0.77%)</title><rect x="1117.9" y="389" width="9.0" height="15.0" fill="rgb(226,49,31)" rx="2" ry="2" />
+<text  x="1120.89" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl() (2,350 samples, 0.12%)</title><rect x="1188.6" y="373" width="1.4" height="15.0" fill="rgb(214,113,19)" rx="2" ry="2" />
+<text  x="1191.57" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (754 samples, 0.04%)</title><rect x="1188.0" y="229" width="0.5" height="15.0" fill="rgb(243,93,54)" rx="2" ry="2" />
+<text  x="1191.04" y="239.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/WriteBufferFromFileDescriptorDiscardOnFailure.cpp:18#DB::WriteBufferFromFileDescriptorDiscardOnFailure::nextImpl() (567 samples, 0.03%)</title><rect x="1185.9" y="53" width="0.4" height="15.0" fill="rgb(239,214,12)" rx="2" ry="2" />
+<text  x="1188.93" y="63.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::worker(std::_List_iterator&lt;ThreadFromGlobalPool&gt;) (2,350 samples, 0.12%)</title><rect x="1188.6" y="437" width="1.4" height="15.0" fill="rgb(230,141,41)" rx="2" ry="2" />
+<text  x="1191.57" y="447.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (3,132 samples, 0.16%)</title><rect x="1183.8" y="293" width="1.9" height="15.0" fill="rgb(207,104,20)" rx="2" ry="2" />
+<text  x="1186.84" y="303.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:336#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (14,771 samples, 0.76%)</title><rect x="1126.9" y="389" width="9.0" height="15.0" fill="rgb(252,4,34)" rx="2" ry="2" />
+<text  x="1129.93" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (754 samples, 0.04%)</title><rect x="1188.0" y="405" width="0.5" height="15.0" fill="rgb(241,129,17)" rx="2" ry="2" />
+<text  x="1191.04" y="415.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/WriteBuffer.h:55#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (567 samples, 0.03%)</title><rect x="1185.9" y="69" width="0.4" height="15.0" fill="rgb(210,177,39)" rx="2" ry="2" />
+<text  x="1188.93" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:251#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (36,537 samples, 1.89%)</title><rect x="1150.3" y="389" width="22.3" height="15.0" fill="rgb(245,123,28)" rx="2" ry="2" />
+<text  x="1153.29" y="399.5" >/..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl() (3,132 samples, 0.16%)</title><rect x="1183.8" y="357" width="1.9" height="15.0" fill="rgb(205,191,10)" rx="2" ry="2" />
+<text  x="1186.84" y="367.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:256#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (251 samples, 0.01%)</title><rect x="10.0" y="485" width="0.2" height="15.0" fill="rgb(253,198,42)" rx="2" ry="2" />
+<text  x="13.00" y="495.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.h:150#ThreadFromGlobalPool::ThreadFromGlobalPool&lt;ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&gt;(ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&amp;&amp;)::{lambda()#1}::operator()() const (2,350 samples, 0.12%)</title><rect x="1188.6" y="453" width="1.4" height="15.0" fill="rgb(253,121,10)" rx="2" ry="2" />
+<text  x="1191.57" y="463.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (2,615 samples, 0.14%)</title><rect x="1186.4" y="325" width="1.6" height="15.0" fill="rgb(224,36,26)" rx="2" ry="2" />
+<text  x="1189.43" y="335.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:356#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (2,042 samples, 0.11%)</title><rect x="1166.1" y="373" width="1.3" height="15.0" fill="rgb(217,185,49)" rx="2" ry="2" />
+<text  x="1169.11" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (417 samples, 0.02%)</title><rect x="10.4" y="245" width="0.3" height="15.0" fill="rgb(226,191,21)" rx="2" ry="2" />
+<text  x="13.43" y="255.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (3,132 samples, 0.16%)</title><rect x="1183.8" y="325" width="1.9" height="15.0" fill="rgb(228,151,7)" rx="2" ry="2" />
+<text  x="1186.84" y="335.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (754 samples, 0.04%)</title><rect x="1188.0" y="437" width="0.5" height="15.0" fill="rgb(238,130,45)" rx="2" ry="2" />
+<text  x="1191.04" y="447.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,615 samples, 0.14%)</title><rect x="1186.4" y="389" width="1.6" height="15.0" fill="rgb(225,199,7)" rx="2" ry="2" />
+<text  x="1189.43" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (844 samples, 0.04%)</title><rect x="1060.9" y="197" width="0.5" height="15.0" fill="rgb(252,6,11)" rx="2" ry="2" />
+<text  x="1063.92" y="207.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl() (754 samples, 0.04%)</title><rect x="1188.0" y="421" width="0.5" height="15.0" fill="rgb(229,22,21)" rx="2" ry="2" />
+<text  x="1191.04" y="431.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (803 samples, 0.04%)</title><rect x="1185.8" y="261" width="0.5" height="15.0" fill="rgb(206,173,38)" rx="2" ry="2" />
+<text  x="1188.81" y="271.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;std::thread&gt;::worker(std::_List_iterator&lt;std::thread&gt;) (1,722,618 samples, 89.04%)</title><rect x="10.7" y="437" width="1050.8" height="15.0" fill="rgb(229,7,17)" rx="2" ry="2" />
+<text  x="13.75" y="447.5" >/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;std::thread&gt;::worker(std::_List_iterator&lt;std::thread&gt;)</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (844 samples, 0.04%)</title><rect x="1060.9" y="229" width="0.5" height="15.0" fill="rgb(250,44,23)" rx="2" ry="2" />
+<text  x="1063.92" y="239.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (414 samples, 0.02%)</title><rect x="1188.1" y="117" width="0.3" height="15.0" fill="rgb(246,121,1)" rx="2" ry="2" />
+<text  x="1191.10" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1490#libunwind::UnwindCursor&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::setInfoBasedOnIPRegister(bool) (374 samples, 0.02%)</title><rect x="1187.7" y="69" width="0.2" height="15.0" fill="rgb(224,38,36)" rx="2" ry="2" />
+<text  x="1190.68" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfInstructions.hpp:180#libunwind::DwarfInstructions&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::stepWithDwarf(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, libunwind::Registers_x86_64&amp;) (1,918 samples, 0.10%)</title><rect x="1184.1" y="53" width="1.1" height="15.0" fill="rgb(219,134,16)" rx="2" ry="2" />
+<text  x="1187.07" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (754 samples, 0.04%)</title><rect x="1188.0" y="357" width="0.5" height="15.0" fill="rgb(253,3,2)" rx="2" ry="2" />
+<text  x="1191.04" y="367.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:259#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (848 samples, 0.04%)</title><rect x="1153.6" y="373" width="0.6" height="15.0" fill="rgb(207,109,47)" rx="2" ry="2" />
+<text  x="1156.64" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#execute_native_thread_routine (2,350 samples, 0.12%)</title><rect x="1188.6" y="485" width="1.4" height="15.0" fill="rgb(224,210,50)" rx="2" ry="2" />
+<text  x="1191.57" y="495.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (803 samples, 0.04%)</title><rect x="1185.8" y="245" width="0.5" height="15.0" fill="rgb(205,56,10)" rx="2" ry="2" />
+<text  x="1188.81" y="255.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (200,558 samples, 10.37%)</title><rect x="1061.5" y="485" width="122.3" height="15.0" fill="rgb(245,10,34)" rx="2" ry="2" />
+<text  x="1064.47" y="495.5" >/lib/x86_64-lin..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1983#unw_step (446 samples, 0.02%)</title><rect x="1187.3" y="85" width="0.2" height="15.0" fill="rgb(222,93,53)" rx="2" ry="2" />
+<text  x="1190.26" y="95.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#std::_Function_handler&lt;void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}&gt;::_M_invoke(std::_Any_data const&amp;) (1,024 samples, 0.05%)</title><rect x="1185.8" y="437" width="0.6" height="15.0" fill="rgb(223,161,48)" rx="2" ry="2" />
+<text  x="1188.81" y="447.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:412#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseFDEInstructions(libunwind::LocalAddressSpace&amp;, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info const&amp;, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info const&amp;, unsigned long, int, libunwind::PrologInfo*) (255 samples, 0.01%)</title><rect x="1187.8" y="53" width="0.1" height="15.0" fill="rgb(223,134,27)" rx="2" ry="2" />
+<text  x="1190.75" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:302#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (2,510 samples, 0.13%)</title><rect x="1159.9" y="373" width="1.5" height="15.0" fill="rgb(241,3,35)" rx="2" ry="2" />
+<text  x="1162.91" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:350#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (544 samples, 0.03%)</title><rect x="1165.7" y="373" width="0.4" height="15.0" fill="rgb(216,52,20)" rx="2" ry="2" />
+<text  x="1168.73" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (198 samples, 0.01%)</title><rect x="1188.4" y="117" width="0.1" height="15.0" fill="rgb(226,64,5)" rx="2" ry="2" />
+<text  x="1191.38" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/Dwarf.cpp:327#DB::Dwarf::Section::next(std::basic_string_view&lt;char, std::char_traits&lt;char&gt; &gt;&amp;) (165 samples, 0.01%)</title><rect x="1061.0" y="101" width="0.1" height="15.0" fill="rgb(252,119,42)" rx="2" ry="2" />
+<text  x="1064.01" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:393#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (2,170 samples, 0.11%)</title><rect x="1170.7" y="373" width="1.3" height="15.0" fill="rgb(246,214,34)" rx="2" ry="2" />
+<text  x="1173.68" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:357#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,440 samples, 0.07%)</title><rect x="1167.4" y="373" width="0.8" height="15.0" fill="rgb(214,10,46)" rx="2" ry="2" />
+<text  x="1170.36" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/x86_64-linux-gnu/bits/string_fortified.h:34#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (940 samples, 0.05%)</title><rect x="1172.0" y="373" width="0.6" height="15.0" fill="rgb(205,208,26)" rx="2" ry="2" />
+<text  x="1175.00" y="383.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so#write (567 samples, 0.03%)</title><rect x="1185.9" y="37" width="0.4" height="15.0" fill="rgb(224,83,50)" rx="2" ry="2" />
+<text  x="1188.93" y="47.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (221 samples, 0.01%)</title><rect x="1186.3" y="261" width="0.1" height="15.0" fill="rgb(254,208,24)" rx="2" ry="2" />
+<text  x="1189.30" y="271.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:338#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,413 samples, 0.07%)</title><rect x="1143.6" y="389" width="0.8" height="15.0" fill="rgb(225,26,28)" rx="2" ry="2" />
+<text  x="1146.58" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:337#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (175 samples, 0.01%)</title><rect x="10.2" y="485" width="0.1" height="15.0" fill="rgb(221,167,45)" rx="2" ry="2" />
+<text  x="13.19" y="495.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (206 samples, 0.01%)</title><rect x="1186.5" y="133" width="0.1" height="15.0" fill="rgb(223,160,1)" rx="2" ry="2" />
+<text  x="1189.48" y="143.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (221 samples, 0.01%)</title><rect x="1186.3" y="293" width="0.1" height="15.0" fill="rgb(238,99,3)" rx="2" ry="2" />
+<text  x="1189.30" y="303.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1983#unw_step (645 samples, 0.03%)</title><rect x="1186.6" y="69" width="0.4" height="15.0" fill="rgb(209,84,50)" rx="2" ry="2" />
+<text  x="1189.62" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (2,973 samples, 0.15%)</title><rect x="1183.9" y="117" width="1.8" height="15.0" fill="rgb(230,195,36)" rx="2" ry="2" />
+<text  x="1186.94" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl() (2,615 samples, 0.14%)</title><rect x="1186.4" y="373" width="1.6" height="15.0" fill="rgb(210,219,0)" rx="2" ry="2" />
+<text  x="1189.43" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (3,225 samples, 0.17%)</title><rect x="1183.8" y="437" width="2.0" height="15.0" fill="rgb(244,140,34)" rx="2" ry="2" />
+<text  x="1186.84" y="447.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfInstructions.hpp:167#libunwind::DwarfInstructions&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::stepWithDwarf(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, libunwind::Registers_x86_64&amp;) (386 samples, 0.02%)</title><rect x="1187.3" y="69" width="0.2" height="15.0" fill="rgb(223,78,10)" rx="2" ry="2" />
+<text  x="1190.30" y="79.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (1,722,549 samples, 89.04%)</title><rect x="10.8" y="325" width="1050.6" height="15.0" fill="rgb(222,165,36)" rx="2" ry="2" />
+<text  x="13.75" y="335.5" >/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read()</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:327#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (171 samples, 0.01%)</title><rect x="1164.0" y="373" width="0.1" height="15.0" fill="rgb(248,62,50)" rx="2" ry="2" />
+<text  x="1166.98" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.h:150#ThreadFromGlobalPool::ThreadFromGlobalPool&lt;ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&gt;(ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&amp;&amp;)::{lambda()#1}::operator()() const (1,024 samples, 0.05%)</title><rect x="1185.8" y="469" width="0.6" height="15.0" fill="rgb(231,120,43)" rx="2" ry="2" />
+<text  x="1188.81" y="479.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:393#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (302 samples, 0.02%)</title><rect x="1175.2" y="389" width="0.1" height="15.0" fill="rgb(232,45,34)" rx="2" ry="2" />
+<text  x="1178.15" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (1,721,602 samples, 88.99%)</title><rect x="10.8" y="213" width="1050.1" height="15.0" fill="rgb(229,128,16)" rx="2" ry="2" />
+<text  x="13.75" y="223.5" >/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:336#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,677 samples, 0.09%)</title><rect x="1157.7" y="373" width="1.0" height="15.0" fill="rgb(205,135,35)" rx="2" ry="2" />
+<text  x="1160.66" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1488#libunwind::UnwindCursor&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::setInfoBasedOnIPRegister(bool) (95,240 samples, 4.92%)</title><rect x="1117.3" y="405" width="58.1" height="15.0" fill="rgb(232,27,52)" rx="2" ry="2" />
+<text  x="1120.33" y="415.5" >/build..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (803 samples, 0.04%)</title><rect x="1185.8" y="197" width="0.5" height="15.0" fill="rgb(228,22,47)" rx="2" ry="2" />
+<text  x="1188.81" y="207.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (803 samples, 0.04%)</title><rect x="1185.8" y="229" width="0.5" height="15.0" fill="rgb(234,49,17)" rx="2" ry="2" />
+<text  x="1188.81" y="239.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,615 samples, 0.14%)</title><rect x="1186.4" y="357" width="1.6" height="15.0" fill="rgb(235,139,43)" rx="2" ry="2" />
+<text  x="1189.43" y="367.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (3,132 samples, 0.16%)</title><rect x="1183.8" y="197" width="1.9" height="15.0" fill="rgb(210,76,31)" rx="2" ry="2" />
+<text  x="1186.84" y="207.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,347 samples, 0.12%)</title><rect x="1188.6" y="293" width="1.4" height="15.0" fill="rgb(232,211,21)" rx="2" ry="2" />
+<text  x="1191.57" y="303.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:268#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (165 samples, 0.01%)</title><rect x="1154.8" y="373" width="0.1" height="15.0" fill="rgb(205,213,4)" rx="2" ry="2" />
+<text  x="1157.81" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl() (803 samples, 0.04%)</title><rect x="1185.8" y="357" width="0.5" height="15.0" fill="rgb(211,157,28)" rx="2" ry="2" />
+<text  x="1188.81" y="367.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:350#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,564 samples, 0.08%)</title><rect x="1144.5" y="389" width="0.9" height="15.0" fill="rgb(213,3,30)" rx="2" ry="2" />
+<text  x="1147.46" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/impl/FastMemcpy.h:94#memcpy (3,016 samples, 0.16%)</title><rect x="785.1" y="53" width="1.9" height="15.0" fill="rgb(232,90,4)" rx="2" ry="2" />
+<text  x="788.13" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:284#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (524 samples, 0.03%)</title><rect x="1156.1" y="373" width="0.3" height="15.0" fill="rgb(239,108,22)" rx="2" ry="2" />
+<text  x="1159.08" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (1,721,602 samples, 88.99%)</title><rect x="10.8" y="197" width="1050.1" height="15.0" fill="rgb(217,215,17)" rx="2" ry="2" />
+<text  x="13.75" y="207.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/EHHeaderParser.hpp:91#libunwind::EHHeaderParser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (189 samples, 0.01%)</title><rect x="1187.6" y="53" width="0.1" height="15.0" fill="rgb(220,229,36)" rx="2" ry="2" />
+<text  x="1190.57" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (95,363 samples, 4.93%)</title><rect x="1117.3" y="437" width="58.1" height="15.0" fill="rgb(228,22,53)" rx="2" ry="2" />
+<text  x="1120.26" y="447.5" >/build..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (3,132 samples, 0.16%)</title><rect x="1183.8" y="229" width="1.9" height="15.0" fill="rgb(208,191,36)" rx="2" ry="2" />
+<text  x="1186.84" y="239.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#std::_Function_handler&lt;void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}&gt;::_M_invoke(std::_Any_data const&amp;) (2,350 samples, 0.12%)</title><rect x="1188.6" y="421" width="1.4" height="15.0" fill="rgb(224,159,15)" rx="2" ry="2" />
+<text  x="1191.57" y="431.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (845 samples, 0.04%)</title><rect x="1060.9" y="261" width="0.5" height="15.0" fill="rgb(249,183,30)" rx="2" ry="2" />
+<text  x="1063.92" y="271.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1985#unw_step (251 samples, 0.01%)</title><rect x="1188.2" y="85" width="0.2" height="15.0" fill="rgb(211,222,32)" rx="2" ry="2" />
+<text  x="1191.20" y="95.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (754 samples, 0.04%)</title><rect x="1188.0" y="469" width="0.5" height="15.0" fill="rgb(216,223,16)" rx="2" ry="2" />
+<text  x="1191.04" y="479.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:364#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (351 samples, 0.02%)</title><rect x="1168.3" y="373" width="0.3" height="15.0" fill="rgb(232,21,44)" rx="2" ry="2" />
+<text  x="1171.34" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,350 samples, 0.12%)</title><rect x="1188.6" y="389" width="1.4" height="15.0" fill="rgb(250,181,29)" rx="2" ry="2" />
+<text  x="1191.57" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (1,721,602 samples, 88.99%)</title><rect x="10.8" y="101" width="1050.1" height="15.0" fill="rgb(232,81,11)" rx="2" ry="2" />
+<text  x="13.75" y="111.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1983#unw_step (2,129 samples, 0.11%)</title><rect x="1184.0" y="69" width="1.3" height="15.0" fill="rgb(237,88,8)" rx="2" ry="2" />
+<text  x="1187.00" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl() (2,347 samples, 0.12%)</title><rect x="1188.6" y="309" width="1.4" height="15.0" fill="rgb(224,41,16)" rx="2" ry="2" />
+<text  x="1191.57" y="319.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (2,347 samples, 0.12%)</title><rect x="1188.6" y="261" width="1.4" height="15.0" fill="rgb(229,146,28)" rx="2" ry="2" />
+<text  x="1191.57" y="271.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (803 samples, 0.04%)</title><rect x="1185.8" y="277" width="0.5" height="15.0" fill="rgb(250,213,29)" rx="2" ry="2" />
+<text  x="1188.81" y="287.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.h:150#ThreadFromGlobalPool::ThreadFromGlobalPool&lt;ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&gt;(ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::scheduleImpl&lt;void&gt;(std::function&lt;void ()&gt;, int, std::optional&lt;unsigned long&gt;)::{lambda()#3}&amp;&amp;)::{lambda()#1}::operator()() const (1,722,567 samples, 89.04%)</title><rect x="10.7" y="421" width="1050.7" height="15.0" fill="rgb(226,191,2)" rx="2" ry="2" />
+<text  x="13.75" y="431.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.h:150#ThreadFromGlobalPool::ThreadFromGlobalPool&lt;ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::s..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (1,721,602 samples, 88.99%)</title><rect x="10.8" y="245" width="1050.1" height="15.0" fill="rgb(220,169,33)" rx="2" ry="2" />
+<text  x="13.75" y="255.5" >/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl()</text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate() (495 samples, 0.03%)</title><rect x="10.4" y="437" width="0.3" height="15.0" fill="rgb(233,40,30)" rx="2" ry="2" />
+<text  x="13.43" y="447.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (803 samples, 0.04%)</title><rect x="1185.8" y="341" width="0.5" height="15.0" fill="rgb(237,163,39)" rx="2" ry="2" />
+<text  x="1188.81" y="351.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::worker(std::_List_iterator&lt;ThreadFromGlobalPool&gt;) (495 samples, 0.03%)</title><rect x="10.4" y="469" width="0.3" height="15.0" fill="rgb(237,164,5)" rx="2" ry="2" />
+<text  x="13.43" y="479.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate() (2,644 samples, 0.14%)</title><rect x="1186.4" y="469" width="1.6" height="15.0" fill="rgb(238,218,49)" rx="2" ry="2" />
+<text  x="1189.43" y="479.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (2,615 samples, 0.14%)</title><rect x="1186.4" y="277" width="1.6" height="15.0" fill="rgb(230,152,11)" rx="2" ry="2" />
+<text  x="1189.43" y="287.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1985#unw_step (801 samples, 0.04%)</title><rect x="1187.5" y="85" width="0.5" height="15.0" fill="rgb(230,58,36)" rx="2" ry="2" />
+<text  x="1190.54" y="95.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (200,240 samples, 10.35%)</title><rect x="1061.5" y="469" width="122.1" height="15.0" fill="rgb(233,126,53)" rx="2" ry="2" />
+<text  x="1064.48" y="479.5" >/build/obj-x86_..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl() (1,722,549 samples, 89.04%)</title><rect x="10.8" y="341" width="1050.6" height="15.0" fill="rgb(217,157,4)" rx="2" ry="2" />
+<text  x="13.75" y="351.5" >/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl()</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:283#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (727 samples, 0.04%)</title><rect x="1155.6" y="373" width="0.5" height="15.0" fill="rgb(252,218,17)" rx="2" ry="2" />
+<text  x="1158.63" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#execute_native_thread_routine (1,722,618 samples, 89.04%)</title><rect x="10.7" y="453" width="1050.8" height="15.0" fill="rgb(230,151,21)" rx="2" ry="2" />
+<text  x="13.75" y="463.5" >/usr/lib/debug/usr/bin/clickhouse#execute_native_thread_routine</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:337#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (12,526 samples, 0.65%)</title><rect x="1135.9" y="389" width="7.7" height="15.0" fill="rgb(205,70,49)" rx="2" ry="2" />
+<text  x="1138.94" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (3,132 samples, 0.16%)</title><rect x="1183.8" y="149" width="1.9" height="15.0" fill="rgb(250,224,38)" rx="2" ry="2" />
+<text  x="1186.84" y="159.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (218 samples, 0.01%)</title><rect x="1186.3" y="197" width="0.1" height="15.0" fill="rgb(211,42,20)" rx="2" ry="2" />
+<text  x="1189.30" y="207.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:232#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (2,444 samples, 0.13%)</title><rect x="1146.3" y="389" width="1.5" height="15.0" fill="rgb(252,203,31)" rx="2" ry="2" />
+<text  x="1149.34" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (803 samples, 0.04%)</title><rect x="1185.8" y="309" width="0.5" height="15.0" fill="rgb(253,119,49)" rx="2" ry="2" />
+<text  x="1188.81" y="319.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:367#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (306 samples, 0.02%)</title><rect x="1168.8" y="373" width="0.2" height="15.0" fill="rgb(249,201,51)" rx="2" ry="2" />
+<text  x="1171.82" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:233#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (627 samples, 0.03%)</title><rect x="1147.8" y="389" width="0.4" height="15.0" fill="rgb(235,30,44)" rx="2" ry="2" />
+<text  x="1150.83" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (417 samples, 0.02%)</title><rect x="10.4" y="357" width="0.3" height="15.0" fill="rgb(206,185,6)" rx="2" ry="2" />
+<text  x="13.43" y="367.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;std::thread&gt;::worker(std::_List_iterator&lt;std::thread&gt;) (2,350 samples, 0.12%)</title><rect x="1188.6" y="469" width="1.4" height="15.0" fill="rgb(239,187,34)" rx="2" ry="2" />
+<text  x="1191.57" y="479.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1985#unw_step (198 samples, 0.01%)</title><rect x="1188.4" y="101" width="0.1" height="15.0" fill="rgb(219,128,30)" rx="2" ry="2" />
+<text  x="1191.38" y="111.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (1,721,602 samples, 88.99%)</title><rect x="10.8" y="181" width="1050.1" height="15.0" fill="rgb(240,116,52)" rx="2" ry="2" />
+<text  x="13.75" y="191.5" >/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, ..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/memcpy.h:13#memcpy (935 samples, 0.05%)</title><rect x="1186.6" y="149" width="0.6" height="15.0" fill="rgb(230,38,38)" rx="2" ry="2" />
+<text  x="1189.60" y="159.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (898 samples, 0.05%)</title><rect x="1186.6" y="85" width="0.6" height="15.0" fill="rgb(206,116,44)" rx="2" ry="2" />
+<text  x="1189.62" y="95.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (844 samples, 0.04%)</title><rect x="1060.9" y="165" width="0.5" height="15.0" fill="rgb(245,104,19)" rx="2" ry="2" />
+<text  x="1063.92" y="175.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (417 samples, 0.02%)</title><rect x="10.4" y="309" width="0.3" height="15.0" fill="rgb(217,139,54)" rx="2" ry="2" />
+<text  x="13.43" y="319.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (846 samples, 0.04%)</title><rect x="1060.9" y="293" width="0.5" height="15.0" fill="rgb(247,153,5)" rx="2" ry="2" />
+<text  x="1063.92" y="303.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (803 samples, 0.04%)</title><rect x="1185.8" y="293" width="0.5" height="15.0" fill="rgb(207,39,21)" rx="2" ry="2" />
+<text  x="1188.81" y="303.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/impl/FastMemcpy.h:592#memcpy (20,380 samples, 1.05%)</title><rect x="768.6" y="53" width="12.5" height="15.0" fill="rgb(222,62,15)" rx="2" ry="2" />
+<text  x="771.63" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/impl/FastMemcpy.h:93#memcpy (6,668 samples, 0.34%)</title><rect x="781.1" y="53" width="4.0" height="15.0" fill="rgb(218,79,11)" rx="2" ry="2" />
+<text  x="784.06" y="63.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (417 samples, 0.02%)</title><rect x="10.4" y="197" width="0.3" height="15.0" fill="rgb(213,196,16)" rx="2" ry="2" />
+<text  x="13.43" y="207.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (2,615 samples, 0.14%)</title><rect x="1186.4" y="181" width="1.6" height="15.0" fill="rgb(239,106,36)" rx="2" ry="2" />
+<text  x="1189.43" y="191.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::worker(std::_List_iterator&lt;ThreadFromGlobalPool&gt;) (1,722,554 samples, 89.04%)</title><rect x="10.8" y="405" width="1050.6" height="15.0" fill="rgb(206,168,11)" rx="2" ry="2" />
+<text  x="13.75" y="415.5" >/usr/include/c++/9/bits/atomic_base.h:551#ThreadPoolImpl&lt;ThreadFromGlobalPool&gt;::worker(std::_List_iterator&lt;ThreadFromGlobalPool&gt;)</text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate() (3,225 samples, 0.17%)</title><rect x="1183.8" y="453" width="2.0" height="15.0" fill="rgb(228,215,42)" rx="2" ry="2" />
+<text  x="1186.84" y="463.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (3,132 samples, 0.16%)</title><rect x="1183.8" y="373" width="1.9" height="15.0" fill="rgb(253,93,16)" rx="2" ry="2" />
+<text  x="1186.84" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (394 samples, 0.02%)</title><rect x="10.4" y="101" width="0.3" height="15.0" fill="rgb(226,88,27)" rx="2" ry="2" />
+<text  x="13.44" y="111.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (495 samples, 0.03%)</title><rect x="10.4" y="389" width="0.3" height="15.0" fill="rgb(211,27,22)" rx="2" ry="2" />
+<text  x="13.43" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/memcpy.h:13#memcpy (380,087 samples, 19.65%)</title><rect x="829.0" y="53" width="231.8" height="15.0" fill="rgb(214,23,54)" rx="2" ry="2" />
+<text  x="831.98" y="63.5" >/build/obj-x86_64-linux-gnu/....</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:350#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (180 samples, 0.01%)</title><rect x="1159.6" y="373" width="0.1" height="15.0" fill="rgb(236,126,39)" rx="2" ry="2" />
+<text  x="1162.61" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (2,347 samples, 0.12%)</title><rect x="1188.6" y="181" width="1.4" height="15.0" fill="rgb(205,45,51)" rx="2" ry="2" />
+<text  x="1191.57" y="191.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl() (1,721,603 samples, 88.99%)</title><rect x="10.8" y="309" width="1050.1" height="15.0" fill="rgb(217,180,49)" rx="2" ry="2" />
+<text  x="13.75" y="319.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Core/Block.h:90#DB::MergeSortingBlockInputStream::readImpl()</text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (834 samples, 0.04%)</title><rect x="1060.9" y="133" width="0.5" height="15.0" fill="rgb(235,29,13)" rx="2" ry="2" />
+<text  x="1063.92" y="143.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (2,615 samples, 0.14%)</title><rect x="1186.4" y="261" width="1.6" height="15.0" fill="rgb(246,198,26)" rx="2" ry="2" />
+<text  x="1189.43" y="271.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (935 samples, 0.05%)</title><rect x="1186.6" y="117" width="0.6" height="15.0" fill="rgb(218,140,53)" rx="2" ry="2" />
+<text  x="1189.60" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (803 samples, 0.04%)</title><rect x="1185.8" y="149" width="0.5" height="15.0" fill="rgb(210,143,41)" rx="2" ry="2" />
+<text  x="1188.81" y="159.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/PartialSortingBlockInputStream.cpp:13#DB::PartialSortingBlockInputStream::readImpl() (754 samples, 0.04%)</title><rect x="1188.0" y="389" width="0.5" height="15.0" fill="rgb(250,87,35)" rx="2" ry="2" />
+<text  x="1191.04" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:287#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (347 samples, 0.02%)</title><rect x="1156.4" y="373" width="0.2" height="15.0" fill="rgb(254,115,32)" rx="2" ry="2" />
+<text  x="1159.42" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (221 samples, 0.01%)</title><rect x="1186.3" y="357" width="0.1" height="15.0" fill="rgb(250,2,5)" rx="2" ry="2" />
+<text  x="1189.30" y="367.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (417 samples, 0.02%)</title><rect x="10.4" y="229" width="0.3" height="15.0" fill="rgb(236,229,21)" rx="2" ry="2" />
+<text  x="13.43" y="239.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (1,722,554 samples, 89.04%)</title><rect x="10.8" y="357" width="1050.6" height="15.0" fill="rgb(237,116,12)" rx="2" ry="2" />
+<text  x="13.75" y="367.5" >/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read()</text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/atomic_base.h:551#std::_Function_handler&lt;void (), DB::AsynchronousBlockInputStream::next()::{lambda()#1}&gt;::_M_invoke(std::_Any_data const&amp;) (2,644 samples, 0.14%)</title><rect x="1186.4" y="485" width="1.6" height="15.0" fill="rgb(232,6,45)" rx="2" ry="2" />
+<text  x="1189.43" y="495.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (2,865 samples, 0.15%)</title><rect x="1184.0" y="85" width="1.7" height="15.0" fill="rgb(243,4,24)" rx="2" ry="2" />
+<text  x="1187.00" y="95.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/Dwarf.cpp:635#DB::Dwarf::findAddress(unsigned long, DB::Dwarf::LocationInfo&amp;, DB::Dwarf::LocationInfoMode) const (217 samples, 0.01%)</title><rect x="1186.3" y="165" width="0.1" height="15.0" fill="rgb(250,152,9)" rx="2" ry="2" />
+<text  x="1189.30" y="175.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (803 samples, 0.04%)</title><rect x="1185.8" y="165" width="0.5" height="15.0" fill="rgb(253,103,30)" rx="2" ry="2" />
+<text  x="1188.81" y="175.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl() (1,024 samples, 0.05%)</title><rect x="1185.8" y="389" width="0.6" height="15.0" fill="rgb(241,28,29)" rx="2" ry="2" />
+<text  x="1188.81" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:189#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (358 samples, 0.02%)</title><rect x="1153.0" y="373" width="0.3" height="15.0" fill="rgb(223,9,53)" rx="2" ry="2" />
+<text  x="1156.04" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:392#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (835 samples, 0.04%)</title><rect x="1170.2" y="373" width="0.5" height="15.0" fill="rgb(233,3,47)" rx="2" ry="2" />
+<text  x="1173.17" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate() (754 samples, 0.04%)</title><rect x="1188.0" y="485" width="0.5" height="15.0" fill="rgb(239,223,35)" rx="2" ry="2" />
+<text  x="1191.04" y="495.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (2,347 samples, 0.12%)</title><rect x="1188.6" y="101" width="1.4" height="15.0" fill="rgb(220,69,0)" rx="2" ry="2" />
+<text  x="1191.57" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:34#DB::ExpressionBlockInputStream::readImpl() (495 samples, 0.03%)</title><rect x="10.4" y="405" width="0.3" height="15.0" fill="rgb(235,198,32)" rx="2" ry="2" />
+<text  x="13.43" y="415.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionArrayMapped&lt;DB::ArrayMapImpl, DB::NameArrayMap&gt;::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (844 samples, 0.04%)</title><rect x="1060.9" y="245" width="0.5" height="15.0" fill="rgb(237,58,1)" rx="2" ry="2" />
+<text  x="1063.92" y="255.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so#write (299 samples, 0.02%)</title><rect x="1183.6" y="437" width="0.2" height="15.0" fill="rgb(238,83,35)" rx="2" ry="2" />
+<text  x="1186.61" y="447.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so#start_thread (1,722,618 samples, 89.04%)</title><rect x="10.7" y="469" width="1050.8" height="15.0" fill="rgb(240,85,6)" rx="2" ry="2" />
+<text  x="13.75" y="479.5" >/lib/x86_64-linux-gnu/libpthread-2.27.so#start_thread</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:241#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (437 samples, 0.02%)</title><rect x="1148.3" y="389" width="0.2" height="15.0" fill="rgb(248,5,46)" rx="2" ry="2" />
+<text  x="1151.28" y="399.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (2,347 samples, 0.12%)</title><rect x="1188.6" y="197" width="1.4" height="15.0" fill="rgb(248,61,2)" rx="2" ry="2" />
+<text  x="1191.57" y="207.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1985#unw_step (736 samples, 0.04%)</title><rect x="1185.3" y="69" width="0.4" height="15.0" fill="rgb(214,108,24)" rx="2" ry="2" />
+<text  x="1188.30" y="79.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (835 samples, 0.04%)</title><rect x="1060.9" y="149" width="0.5" height="15.0" fill="rgb(226,117,6)" rx="2" ry="2" />
+<text  x="1063.92" y="159.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/WriteBuffer.h:55#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (2,182 samples, 0.11%)</title><rect x="1188.7" y="69" width="1.3" height="15.0" fill="rgb(253,60,31)" rx="2" ry="2" />
+<text  x="1191.67" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../libs/libmemcpy/impl/FastMemcpy.h:96#memcpy (68,866 samples, 3.56%)</title><rect x="787.0" y="53" width="42.0" height="15.0" fill="rgb(213,210,6)" rx="2" ry="2" />
+<text  x="789.97" y="63.5" >/bu..</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/WriteBuffer.h:55#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (299 samples, 0.02%)</title><rect x="1183.6" y="469" width="0.2" height="15.0" fill="rgb(235,161,50)" rx="2" ry="2" />
+<text  x="1186.61" y="479.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (417 samples, 0.02%)</title><rect x="10.4" y="277" width="0.3" height="15.0" fill="rgb(228,29,53)" rx="2" ry="2" />
+<text  x="13.43" y="287.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (1,721,602 samples, 88.99%)</title><rect x="10.8" y="133" width="1050.1" height="15.0" fill="rgb(206,77,34)" rx="2" ry="2" />
+<text  x="13.75" y="143.5" >/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:321#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,857 samples, 0.10%)</title><rect x="1162.8" y="373" width="1.2" height="15.0" fill="rgb(207,151,1)" rx="2" ry="2" />
+<text  x="1165.85" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:267#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (1,061 samples, 0.05%)</title><rect x="1154.2" y="373" width="0.6" height="15.0" fill="rgb(240,96,17)" rx="2" ry="2" />
+<text  x="1157.16" y="383.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (582 samples, 0.03%)</title><rect x="1185.9" y="85" width="0.4" height="15.0" fill="rgb(233,105,16)" rx="2" ry="2" />
+<text  x="1188.92" y="95.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Columns/ColumnFunction.cpp:195#DB::ColumnFunction::reduce() const (221 samples, 0.01%)</title><rect x="1186.3" y="277" width="0.1" height="15.0" fill="rgb(241,159,13)" rx="2" ry="2" />
+<text  x="1189.30" y="287.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::executeImpl(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long) (3,132 samples, 0.16%)</title><rect x="1183.8" y="165" width="1.9" height="15.0" fill="rgb(226,154,19)" rx="2" ry="2" />
+<text  x="1186.84" y="175.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (2,347 samples, 0.12%)</title><rect x="1188.6" y="325" width="1.4" height="15.0" fill="rgb(243,207,33)" rx="2" ry="2" />
+<text  x="1191.57" y="335.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:365#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (438 samples, 0.02%)</title><rect x="1168.6" y="373" width="0.2" height="15.0" fill="rgb(237,66,52)" rx="2" ry="2" />
+<text  x="1171.56" y="383.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::IBlockInputStream::read() (3,132 samples, 0.16%)</title><rect x="1183.8" y="341" width="1.9" height="15.0" fill="rgb(230,116,48)" rx="2" ry="2" />
+<text  x="1186.84" y="351.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:311#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (429 samples, 0.02%)</title><rect x="1162.3" y="373" width="0.3" height="15.0" fill="rgb(239,187,54)" rx="2" ry="2" />
+<text  x="1165.29" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:256#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (627 samples, 0.03%)</title><rect x="1153.3" y="373" width="0.3" height="15.0" fill="rgb(231,62,7)" rx="2" ry="2" />
+<text  x="1156.26" y="383.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libc-2.27.so#syscall (577 samples, 0.03%)</title><rect x="1186.6" y="37" width="0.4" height="15.0" fill="rgb(235,27,48)" rx="2" ry="2" />
+<text  x="1189.64" y="47.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/IO/BufferBase.h:81#DB::(anonymous namespace)::writeTraceInfo(DB::TimerType, int, siginfo_t*, void*) [clone .isra.0] (206 samples, 0.01%)</title><rect x="1186.5" y="117" width="0.1" height="15.0" fill="rgb(238,152,42)" rx="2" ry="2" />
+<text  x="1189.48" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (846 samples, 0.04%)</title><rect x="1060.9" y="309" width="0.5" height="15.0" fill="rgb(236,111,51)" rx="2" ry="2" />
+<text  x="1063.92" y="319.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/StackTrace.cpp:197#StackTrace::StackTrace(ucontext_t const&amp;) (206 samples, 0.01%)</title><rect x="1186.5" y="101" width="0.1" height="15.0" fill="rgb(208,54,2)" rx="2" ry="2" />
+<text  x="1189.48" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Common/Dwarf.cpp:641#DB::Dwarf::findAddress(unsigned long, DB::Dwarf::LocationInfo&amp;, DB::Dwarf::LocationInfoMode) const (364 samples, 0.02%)</title><rect x="1061.2" y="117" width="0.2" height="15.0" fill="rgb(249,206,12)" rx="2" ry="2" />
+<text  x="1064.20" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (2,615 samples, 0.14%)</title><rect x="1186.4" y="293" width="1.6" height="15.0" fill="rgb(249,223,54)" rx="2" ry="2" />
+<text  x="1189.43" y="303.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libc-2.27.so#clone (1,722,618 samples, 89.04%)</title><rect x="10.7" y="485" width="1050.8" height="15.0" fill="rgb(205,221,21)" rx="2" ry="2" />
+<text  x="13.75" y="495.5" >/lib/x86_64-linux-gnu/libc-2.27.so#clone</text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/IFunction.cpp:464#DB::PreparedFunctionImpl::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (417 samples, 0.02%)</title><rect x="10.4" y="165" width="0.3" height="15.0" fill="rgb(231,101,32)" rx="2" ry="2" />
+<text  x="13.43" y="175.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:374#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (501 samples, 0.03%)</title><rect x="1169.1" y="373" width="0.3" height="15.0" fill="rgb(223,225,54)" rx="2" ry="2" />
+<text  x="1172.14" y="383.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (935 samples, 0.05%)</title><rect x="1186.6" y="133" width="0.6" height="15.0" fill="rgb(210,225,21)" rx="2" ry="2" />
+<text  x="1189.60" y="143.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/AddressSpace.hpp:379#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::parseCIE(libunwind::LocalAddressSpace&amp;, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (224 samples, 0.01%)</title><rect x="1159.8" y="373" width="0.1" height="15.0" fill="rgb(241,104,42)" rx="2" ry="2" />
+<text  x="1162.77" y="383.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (2,615 samples, 0.14%)</title><rect x="1186.4" y="245" width="1.6" height="15.0" fill="rgb(226,124,48)" rx="2" ry="2" />
+<text  x="1189.43" y="255.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Functions/FunctionsMiscellaneous.h:49#DB::FunctionExpression::execute(DB::Block&amp;, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; const&amp;, unsigned long, unsigned long, bool) (754 samples, 0.04%)</title><rect x="1188.0" y="261" width="0.5" height="15.0" fill="rgb(233,224,12)" rx="2" ry="2" />
+<text  x="1191.04" y="271.5" ></text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (2,615 samples, 0.14%)</title><rect x="1186.4" y="165" width="1.6" height="15.0" fill="rgb(248,171,24)" rx="2" ry="2" />
+<text  x="1189.43" y="175.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/DwarfParser.hpp:294#libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::findFDE(libunwind::LocalAddressSpace&amp;, unsigned long, unsigned long, unsigned int, unsigned long, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::FDE_Info*, libunwind::CFI_Parser&lt;libunwind::LocalAddressSpace&gt;::CIE_Info*) (825 samples, 0.04%)</title><rect x="1174.7" y="389" width="0.5" height="15.0" fill="rgb(252,113,39)" rx="2" ry="2" />
+<text  x="1177.65" y="399.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:677#DB::ExpressionAction::execute(DB::Block&amp;, bool) const (845 samples, 0.04%)</title><rect x="1060.9" y="277" width="0.5" height="15.0" fill="rgb(211,229,8)" rx="2" ry="2" />
+<text  x="1063.92" y="287.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (3,132 samples, 0.16%)</title><rect x="1183.8" y="213" width="1.9" height="15.0" fill="rgb(226,60,4)" rx="2" ry="2" />
+<text  x="1186.84" y="223.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1471#libunwind::UnwindCursor&lt;libunwind::LocalAddressSpace, libunwind::Registers_x86_64&gt;::setInfoBasedOnIPRegister(bool) (656 samples, 0.03%)</title><rect x="1185.3" y="53" width="0.4" height="15.0" fill="rgb(231,223,0)" rx="2" ry="2" />
+<text  x="1188.31" y="63.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so# (2,973 samples, 0.15%)</title><rect x="1183.9" y="133" width="1.8" height="15.0" fill="rgb(210,11,19)" rx="2" ry="2" />
+<text  x="1186.94" y="143.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (2,347 samples, 0.12%)</title><rect x="1188.6" y="165" width="1.4" height="15.0" fill="rgb(248,167,21)" rx="2" ry="2" />
+<text  x="1191.57" y="175.5" ></text>
+</g>
+<g >
+<title>/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate() (1,722,554 samples, 89.04%)</title><rect x="10.8" y="373" width="1050.6" height="15.0" fill="rgb(213,223,8)" rx="2" ry="2" />
+<text  x="13.75" y="383.5" >/usr/include/c++/9/bits/stl_vector.h:108#DB::AsynchronousBlockInputStream::calculate()</text>
+</g>
+<g >
+<title>/usr/lib/debug/usr/bin/clickhouse#DB::FunctionAddressToLine::impl(unsigned long) (803 samples, 0.04%)</title><rect x="1185.8" y="117" width="0.5" height="15.0" fill="rgb(240,119,4)" rx="2" ry="2" />
+<text  x="1188.81" y="127.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/libunwind.cpp:292#unw_backtrace (365 samples, 0.02%)</title><rect x="1188.1" y="101" width="0.3" height="15.0" fill="rgb(235,1,3)" rx="2" ry="2" />
+<text  x="1191.13" y="111.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../contrib/libunwind/src/UnwindCursor.hpp:1985#unw_step (253 samples, 0.01%)</title><rect x="1187.0" y="69" width="0.2" height="15.0" fill="rgb(252,149,38)" rx="2" ry="2" />
+<text  x="1190.02" y="79.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/Interpreters/ExpressionActions.cpp:759#DB::ExpressionActions::execute(DB::Block&amp;, bool) const (3,132 samples, 0.16%)</title><rect x="1183.8" y="309" width="1.9" height="15.0" fill="rgb(246,145,48)" rx="2" ry="2" />
+<text  x="1186.84" y="319.5" ></text>
+</g>
+<g >
+<title>/lib/x86_64-linux-gnu/libpthread-2.27.so#write (2,181 samples, 0.11%)</title><rect x="1188.7" y="37" width="1.3" height="15.0" fill="rgb(213,68,16)" rx="2" ry="2" />
+<text  x="1191.67" y="47.5" ></text>
+</g>
+<g >
+<title>/build/obj-x86_64-linux-gnu/../dbms/src/DataStreams/ExpressionBlockInputStream.cpp:37#DB::ExpressionBlockInputStream::readImpl() (2,615 samples, 0.14%)</title><rect x="1186.4" y="341" width="1.6" height="15.0" fill="rgb(250,99,43)" rx="2" ry="2" />
+<text  x="1189.43" y="351.5" ></text>
+</g>
+</g>
+</svg>

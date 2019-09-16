@@ -17,6 +17,14 @@ builds:
 checksum:
   name_template: "{{ .ProjectName }}_checksums.txt"
   algorithm: sha256
+archives:
+  -
+    id: clickhouse-flamegraph
+    wrap_in_directory: false
+    files:
+      - "README.md" : "README.md"
+      - "LICENSE" : "LICENSE"
+      - "/usr/bin/flamegraph.pl" : "flamegraph.pl"
 nfpms:
   -
     id: clickhouse-flamegraph

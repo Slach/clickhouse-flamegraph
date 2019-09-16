@@ -1,10 +1,70 @@
 # ClickHouse flamegraph
 command line utility for visualizing clickhouse system.trace_log as flamegraph, 
-based on https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194
+thanks https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194 for original idea
 
-![Output example](docs/clickhouse-flamegraph.png?raw=1 "example SVG")
+<img src="docs/clickhouse-flamegraph.svg?raw=1" alt="example SVG output" width="1024"/>
+
+### Prepare Clickhouse server
+- install clickhouse-server package version 19.14 or higher as described in [documentation](https://clickhouse.yandex/#quick-start)
+- install clickhouse-common-static-dbg package
+- enable query_log and sampling profiling in settings on each server in your cluster for example add following files:
+####  /etc/clickhouse-server/users.d/profiling.xml
+```xml
+<yandex>
+    <profiles>
+        <!-- see details about profile name https://clickhouse.yandex/docs/en/operations/settings/settings_profiles/ and https://clickhouse.yandex/docs/en/operations/server_settings/settings/#default-profile -->
+        <default>
+            <log_queries>1</log_queries>
+            <allow_introspection_functions>1</allow_introspection_functions>
+            <!-- cluster wide 25 times per second sampling profiler -->
+            <query_profiler_real_time_period_ns>40000000</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>40000000</query_profiler_cpu_time_period_ns>
+        </default>
+    </profiles>
+</yandex>
+```
+
 ## Installation
-todo
+currently clickhouse-flamegraph required perl and flamegraph.pl for correct work, you can just download latest packages from  https://github.com/Slach/clickhouse-flamegraph/releases
+
+### Simplest way (but you should skip it if you case about security)
+```bash
+curl -sL https://raw.githubusercontent.com/Slach/clickhouse-flamegraph/master/install.sh | sudo bash
+```
+
+### Linux (deb or rpm based distributive, amd64 architecture)
+```bash
+PKG_MANAGER=$(command -v dpkg || command -v rpm)
+PKG_EXT=$(if [[ "${PKG_MANAGER}" == "/usr/bin/dpkg" ]]; then echo "deb"; else echo "rpm"; fi)
+cd $TEMP
+echo "$(curl -sL https://github.com/Slach/clickhouse-flamegraph/releases/latest | grep href | grep -E "\\.rpm|\\.deb|\\.txt" | cut -d '"' -f 2)" | sed -e "s/^\\/Slach/https:\\/\\/github.com\\/Slach/" | wget -nv -c -i -
+grep $PKG_EXT clickhouse-flamegraph_checksums.txt | sha256sum
+${PKG_MANAGER} -i clickhouse-flamegraph*.${PKG_EXT}
+```
+
+### MacOS (64bit)
+```bash
+brew install wget
+cd $TEMP
+echo "$(curl -sL https://github.com/Slach/clickhouse-flamegraph/releases/latest | grep href | grep -E "darwin_amd64\\.tar\\.gz|\\.txt" | cut -d '"' -f 2)" | sed -e "s/^\\/Slach/https:\\/\\/github.com\\/Slach/" | wget -nv -c -i -
+grep darwin_amd64.tar.gz clickhouse-flamegraph_checksums.txt | sha256sum
+tar -xvfz -C /usr/bin clickhouse-flamegraph*darwin_amd64.tar.gz
+```
+
+### Windows (64bit) 
+install CYGWIN https://cygwin.com/install.html 
+from setup.exe install following packages:
+  - wget
+  - sha256sum
+  - bash
+run following script
+
+```bash
+cd $TEMP
+echo "$(curl -sL https://github.com/Slach/clickhouse-flamegraph/releases/latest | grep href | grep -E "windows_amd64\\.tar\\.gz|\\.txt" | cut -d '"' -f 2)" | sed -e "s/^\\/Slach/https:\\/\\/github.com\\/Slach/" | wget -nv -c -i -
+grep windows_amd64.tar.gz clickhouse-flamegraph_checksums.txt | sha256sum
+tar -xvfz -C /usr/bin clickhouse-flamegraph*windows_amd64.tar.gz
+```
 
 ## Usage
 ```
