@@ -2,7 +2,7 @@
 command line utility for visualizing clickhouse system.trace_log as flamegraph, 
 thanks https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194 for original idea
 
-<img src="docs/clickhouse-flamegraph.svg?raw=1" alt="example SVG output" width="1024"/>
+![Output example](docs/clickhouse-flamegraph.png?raw=1 "example SVG")
 
 ### Prepare Clickhouse server
 - install clickhouse-server package version 19.14 or higher as described in [documentation](https://clickhouse.yandex/#quick-start)
@@ -80,7 +80,7 @@ GLOBAL OPTIONS:
    --date-to value, --to value                 filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse (default: current time) [$CH_FLAME_DATE_TO]
    --query-filter value, --query-regexp value  filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax [$CH_FLAME_QUERY_FILTER]
    --clickhouse-dsn value, --dsn value         clickhouse connection string, see https://github.com/kshvakov/clickhouse#dsn (default: "tcp://localhost:9000?database=default") [$CH_FLAME_CLICKHOUSE_DSN]
-   --output-format value, --format value       accept values: txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format,  (default: "txt") [$CH_FLAME_OUTPUT_FORMAT]
+   --output-format value, --format value       accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format,  (default: "txt") [$CH_FLAME_OUTPUT_FORMAT]
    --debug, --verbose                          show debug log [$CH_FLAME_DEBUG]
    --console                                   output logs to console format instead of json [$CH_FLAME_LOG_TO_CONSOLE]
    --help, -h                                  show help
