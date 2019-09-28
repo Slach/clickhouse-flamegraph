@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
 	"io/ioutil"
@@ -75,9 +74,9 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "output-format, format",
-			Usage:  "accept values: txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format, ",
+			Usage:  "accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format, ",
 			EnvVar: "CH_FLAME_OUTPUT_FORMAT",
-			Value:  "txt",
+			Value:  "svg",
 		},
 		cli.BoolFlag{
 			Name:   "debug, verbose",
@@ -151,27 +150,46 @@ func generate(c *cli.Context) error {
 	if err != nil {
 		log.Fatal().Str("dsn", dsn).Err(err).Msg("Can't establishment clickhouse connection")
 	} else {
-		log.Info().Msg("conected to clickhouse")
+		log.Info().Str("dsn", dsn).Msg("conected to clickhouse")
 	}
 	if _, err := db.Exec("SYSTEM FLUSH LOGS"); err != nil {
 		log.Fatal().Err(err).Msg("SYSTEM FLUSH LOGS failed")
 	}
-	// queryId -> stack -> samples
-	traceData := map[string]map[string]uint64{}
+	// queryId -> stackFile descriptor
+	stackFiles := make(map[string]*os.File, 256)
 	where := " event_time >= ? AND event_time <= ?"
-	traceArgs := []interface{}{dateFrom, dateTo}
 	where = applyQueryFilter(db, c, queryFilter, dateFrom, dateTo, where)
-	traceSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{"where": where})
-	fetchQuery(db, traceSQL, traceArgs, func(r map[string]interface{}) error {
+	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{"where": where})
+	stackArgs := []interface{}{dateFrom, dateTo}
+	fetchQuery(db, stackSQL, stackArgs, func(r map[string]interface{}) error {
 		fetchStack := func(queryId, stack string, samples uint64) {
-			if _, exists := traceData[queryId]; !exists {
-				traceData[queryId] = map[string]uint64{}
+			if _, exists := stackFiles[queryId]; !exists {
+				stackFile := queryId
+				if c.String("output-format") == "json" {
+					stackFile += ".json"
+				} else {
+					stackFile += ".txt"
+				}
+				stackFile = filepath.Join(c.String("output-dir"), stackFile)
+				if f, err := os.Create(stackFile); err != nil {
+					log.Fatal().Err(err).Stack().Str("stackFile", stackFile).Send()
+				} else {
+					stackFiles[queryId] = f
+				}
+				if c.String("output-format") == "json" {
+					if _, err := stackFiles[queryId].WriteString("[\n"); err != nil {
+						log.Fatal().Err(err).Stack().Send()
+					}
+				}
 			}
-			if _, exists := traceData[queryId][stack]; exists {
-				traceData[queryId][stack] += samples
-			} else {
-				traceData[queryId][stack] = samples
+			outputFormat := "%s %d\n"
+			if c.String("output-format") == "json" {
+				outputFormat = " {\"stack\":\"%s\", \"Value\": %d},\n"
 			}
+			if _, err := stackFiles[queryId].WriteString(fmt.Sprintf(outputFormat, stack, samples)); err != nil {
+				log.Fatal().Err(err).Stack().Send()
+			}
+
 		}
 		queryId := r["query_id"].(string)
 		stack := r["stack"].(string)
@@ -181,10 +199,20 @@ func generate(c *cli.Context) error {
 		return nil
 	})
 
-	for queryId, stacks := range traceData {
-		writeFlameGraph(c, queryId, stacks)
+	for queryId, stackFile := range stackFiles {
+		if c.String("output-format") == "json" {
+			if _, err := stackFiles[queryId].WriteString("{}]\n"); err != nil {
+				log.Fatal().Err(err).Stack().Send()
+			}
+		}
+		if err := stackFile.Close(); err != nil {
+			log.Fatal().Err(err).Str("stackFile", stackFile.Name()).Send()
+		}
+		if c.String("output-format") == "txt" || c.String("output-format") == "svg" {
+			writeSVG(c, queryId, stackFile.Name())
+		}
 	}
-
+	log.Info().Int("processedFiles", len(stackFiles)).Msg("done processing")
 	return nil
 }
 
@@ -212,7 +240,7 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, dateFrom t
 		queryFilterArgs = []interface{}{dateFrom, dateTo}
 
 	}
-	var queryIds = make([]string, 0)
+	var queryIds = make([]string, 0, 128)
 	fetchQuery(db, queryIdSQL, queryFilterArgs, func(r map[string]interface{}) error {
 		queryId := r["query_id"].(string)
 		query := r["query"].(string)
@@ -246,34 +274,9 @@ func findFlameGraphScript(c *cli.Context) string {
 	return ""
 }
 
-func writeFlameGraph(c *cli.Context, queryId string, stacks map[string]uint64) {
-	// @TODO DEV/4h implements writeJSON logic
-	writeSVG(c, queryId, flameGraphData(stacks))
-}
-
-func flameGraphData(m map[string]uint64) []byte {
-	var b bytes.Buffer
-
-	for stack, samples := range m {
-		if _, err := b.WriteString(fmt.Sprintf("%s %d\n", stack, samples)); err != nil {
-			log.Fatal().Err(err).Msg("flameGraphData: can't  write data")
-		}
-	}
-
-	return b.Bytes()
-}
-
-func writeSVG(c *cli.Context, queryId string, data []byte) {
-	if c.Bool("debug") {
-		fileName := filepath.Join(c.String("output-dir"), queryId+".raw")
-		if err := ioutil.WriteFile(fileName, data, 0644); err != nil {
-			log.Fatal().Err(err).Str("fileName",fileName).Msg("can't write to data")
-		}
-		log.Debug().Str("fileName", fileName).Msg("raw data saved")
-	}
-
+func writeSVG(c *cli.Context, queryId string, stackName string) {
 	// @TODO DEV/2h advanced title generation logic
-	title := "Clickhouse flame Graph"
+	title := fmt.Sprintf("Clickhouse queryId %s from %s to %s", queryId, c.String("date-from"), c.String("date-to"))
 	args := []string{
 		"--title", title,
 		"--width", fmt.Sprintf("%d", c.Int("width")),
@@ -282,12 +285,14 @@ func writeSVG(c *cli.Context, queryId string, data []byte) {
 		"--nametype", "Stack",
 		//"--colors", "aqua",
 	}
-
+	stackFile, err := os.Open(stackName)
+	if err != nil {
+		log.Fatal().Stack().Err(err).Str("stackFile", stackName)
+	}
 	script := findFlameGraphScript(c)
 	cmd := exec.Command(script, args...)
-	cmd.Stdin = bytes.NewReader(data)
+	cmd.Stdin = stackFile
 	cmd.Stderr = os.Stderr
-
 
 	svg, err := cmd.Output()
 	if err != nil {
@@ -296,7 +301,10 @@ func writeSVG(c *cli.Context, queryId string, data []byte) {
 
 	fileName := filepath.Join(c.String("output-dir"), queryId+".svg")
 	if err := ioutil.WriteFile(fileName, svg, 0644); err != nil {
-		log.Fatal().Err(err).Str("fileName",fileName).Msg("can't write to svg")
+		log.Fatal().Err(err).Str("fileName", fileName).Msg("can't write to svg")
+	}
+	if err := stackFile.Close(); err != nil {
+		log.Fatal().Err(err).Str("stackName", stackName).Stack().Send()
 	}
 }
 
