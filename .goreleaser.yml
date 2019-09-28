@@ -20,7 +20,7 @@ checksum:
 archives:
   -
     id: clickhouse-flamegraph
-    wrap_in_directory: true
+    wrap_in_directory: false
     files:
       - "README.md"
       - "LICENSE"
