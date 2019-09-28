@@ -20,11 +20,11 @@ checksum:
 archives:
   -
     id: clickhouse-flamegraph
-    wrap_in_directory: false
+    wrap_in_directory: true
     files:
-      - "README.md" : "README.md"
-      - "LICENSE" : "LICENSE"
-      - "/usr/bin/flamegraph.pl" : "flamegraph.pl"
+      - "README.md"
+      - "LICENSE"
+      - "/usr/bin/flamegraph.pl"
 nfpms:
   -
     id: clickhouse-flamegraph
