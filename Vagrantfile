@@ -45,9 +45,10 @@ Vagrant.configure(2) do |config|
     apt-get install --no-install-recommends -y python3-pip
     apt-get install --no-install-recommends -y htop ethtool mc curl wget rpm
 
-    pip install -U setuptools
     python3 -m pip install -U pip
+    whereis pip3
     rm -rf /usr/bin/pip3
+    pip3 install -U setuptools
     pip3 install -U bump2version
     pip3 install -U docker-compose
     mkdir -p /home/ubuntu/go/src/github.com/Slach/
