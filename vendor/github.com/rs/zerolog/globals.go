@@ -11,9 +11,13 @@ const (
 	// serialized as Unix timestamp integers.
 	TimeFormatUnix = ""
 
-	// TimeFormatUnix defines a time format that makes time fields to be
+	// TimeFormatUnixMs defines a time format that makes time fields to be
 	// serialized as Unix timestamp integers in milliseconds.
 	TimeFormatUnixMs = "UNIXMS"
+
+	// TimeFormatUnixMicro defines a time format that makes time fields to be
+	// serialized as Unix timestamp integers in microseconds.
+	TimeFormatUnixMicro = "UNIXMICRO"
 )
 
 var (
@@ -57,7 +61,7 @@ var (
 	}
 
 	// TimeFieldFormat defines the time format of the Time field type. If set to
-	// TimeFormatUnix or TimeFormatUnixMs, the time is formatted as an UNIX
+	// TimeFormatUnix, TimeFormatUnixMs or TimeFormatUnixMicro, the time is formatted as an UNIX
 	// timestamp as integer.
 	TimeFieldFormat = time.RFC3339
 
