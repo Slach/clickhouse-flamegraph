@@ -46,7 +46,7 @@ func main() {
 			Name:   "output-dir, o",
 			Value:  "./clickouse-flamegraphs/",
 			EnvVar: "CH_FLAME_OUTPUT_DIR",
-			Usage:  "distination path of grenerated flamegraphs files. default is ./clickouse-flamegraphs/",
+			Usage:  "destination path of generated flamegraphs files",
 		},
 		cli.StringFlag{
 			Name:   "date-from, from",
