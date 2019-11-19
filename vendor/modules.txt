@@ -15,7 +15,7 @@ github.com/kshvakov/clickhouse/lib/lz4
 github.com/kshvakov/clickhouse/lib/protocol
 github.com/kshvakov/clickhouse/lib/types
 github.com/kshvakov/clickhouse/lib/writebuffer
-# github.com/rs/zerolog v1.16.0
+# github.com/rs/zerolog v1.17.2
 github.com/rs/zerolog
 github.com/rs/zerolog/internal/cbor
 github.com/rs/zerolog/internal/json
