@@ -17,7 +17,7 @@ if [[ "$OSTYPE" == "linux-gnu" ]]; then
     elif [[ -n "$(rpm -qa)" ]] 2>/dev/null; then
         grep -E "\\.rpm|\\.txt" /tmp/${PACKAGE_NAME}_urls.txt | wget -nv -c -i -
         PKG_MANAGER_LOCAL="rpm"
-        PKG_CHECKSUM_FILTER="amd64.deb"
+        PKG_CHECKSUM_FILTER="x86_64.rpm"
     else
         grep -E "\\linux_amd64.tar.gz|\\.txt" /tmp/${PACKAGE_NAME}_urls.txt | wget -nv -c -i -
         PKG_MANAGER_LOCAL="tar -C /usr/local/bin -xfvz"

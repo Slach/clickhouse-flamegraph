@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
-	"github.com/kshvakov/clickhouse"
+	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli"
@@ -68,7 +68,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "clickhouse-dsn, dsn",
-			Usage:  "clickhouse connection string, see https://github.com/kshvakov/clickhouse#dsn",
+			Usage:  "clickhouse connection string, see https://github.com/ClickHouse/clickhouse-go#dsn",
 			EnvVar: "CH_FLAME_CLICKHOUSE_DSN",
 			Value:  "tcp://localhost:9000?database=default",
 		},

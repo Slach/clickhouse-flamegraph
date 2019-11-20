@@ -76,6 +76,7 @@ Vagrant.configure(2) do |config|
     cd /vagrant/
     docker-compose down
     docker system prune -f
+    docker volume prune -f
     docker-compose up -d
   SHELL
 end

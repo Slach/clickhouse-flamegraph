@@ -2,7 +2,9 @@ FROM golang:alpine AS builder
 MAINTAINER Eugene Klimov <bloodjazman@gmail.com>
 
 COPY ./ /go/src/github.com/Slach/clickhouse-flamegraph
-RUN go build -o /usr/bin/clickhouse-flamegraph /go/src/github.com/Slach/clickhouse-flamegraph/main.go
+WORKDIR /go/src/github.com/Slach/clickhouse-flamegraph
+RUN go mod tidy
+RUN go build -o /usr/bin/clickhouse-flamegraph main.go
 
 FROM alpine
 RUN apk --no-cache add bash tzdata git perl
