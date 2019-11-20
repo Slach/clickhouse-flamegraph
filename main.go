@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/araddon/dateparse"
 	"github.com/ClickHouse/clickhouse-go"
+	"github.com/araddon/dateparse"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli"
