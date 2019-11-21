@@ -7,5 +7,5 @@ require (
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/rs/zerolog v1.17.2
-	github.com/urfave/cli v1.22.1
+	github.com/urfave/cli v1.22.2
 )
