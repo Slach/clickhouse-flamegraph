@@ -16,7 +16,7 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
@@ -27,66 +27,66 @@ func main() {
 	app.HideHelp = false
 	app.Version = "2019.6.0"
 	app.Flags = []cli.Flag{
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name:  "width",
 			Value: 1200,
 			Usage: "width of image (default 1200)",
 		},
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name:  "height",
 			Value: 16,
 			Usage: "height of each frame (default 16)",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:   "flamegraph-script",
-			EnvVar: "CH_FLAME_FLAMEGRAPH_SCRIPT",
+			EnvVars: []string{"CH_FLAME_FLAMEGRAPH_SCRIPT"},
 			Usage:  "path of flamegraph.pl. if not given, find the script from $PATH",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:   "output-dir, o",
 			Value:  "./clickouse-flamegraphs/",
-			EnvVar: "CH_FLAME_OUTPUT_DIR",
+			EnvVars: []string{"CH_FLAME_OUTPUT_DIR"},
 			Usage:  "destination path of generated flamegraphs files",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:   "date-from, from",
 			Usage:  "filter system.trace_log from date in any parsable format, see https://github.com/araddon/dateparse",
-			EnvVar: "CH_FLAME_DATE_FROM",
+			EnvVars: []string{"CH_FLAME_DATE_FROM"},
 			Value:  time.Now().Add(time.Duration(-5) * time.Minute).Format("2006-01-02 15:04:05 -0700"),
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:   "date-to, to",
 			Usage:  "filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse",
-			EnvVar: "CH_FLAME_DATE_TO",
+			EnvVars: []string{"CH_FLAME_DATE_TO"},
 			Value:  time.Now().Format("2006-01-02 15:04:05 -0700"),
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:   "query-filter, query-regexp",
 			Usage:  "filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax",
-			EnvVar: "CH_FLAME_QUERY_FILTER",
+			EnvVars: []string{"CH_FLAME_QUERY_FILTER"},
 			Value:  "",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:   "clickhouse-dsn, dsn",
 			Usage:  "clickhouse connection string, see https://github.com/ClickHouse/clickhouse-go#dsn",
-			EnvVar: "CH_FLAME_CLICKHOUSE_DSN",
+			EnvVars: []string{"CH_FLAME_CLICKHOUSE_DSN"},
 			Value:  "tcp://localhost:9000?database=default",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:   "output-format, format",
 			Usage:  "accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format, ",
-			EnvVar: "CH_FLAME_OUTPUT_FORMAT",
+			EnvVars: []string{"CH_FLAME_OUTPUT_FORMAT"},
 			Value:  "svg",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:   "debug, verbose",
 			Usage:  "show debug log",
-			EnvVar: "CH_FLAME_DEBUG",
+			EnvVars: []string{"CH_FLAME_DEBUG"},
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:   "console",
 			Usage:  "output logs to console format instead of json",
-			EnvVar: "CH_FLAME_LOG_TO_CONSOLE",
+			EnvVars: []string{"CH_FLAME_LOG_TO_CONSOLE"},
 		},
 	}
 

@@ -5,7 +5,7 @@ Vagrant.configure(2) do |config|
   config.vm.box_check_update = false
 
   config.vm.define :clickhouse_flamegraph do |clickhouse_flamegraph|
-    clickhouse_flamegraph.vm.network "private_network", ip: "172.16.2.77"
+    clickhouse_flamegraph.vm.network "private_network", ip: "172.16.2.77", nic_type: "virtio"
     clickhouse_flamegraph.vm.host_name = "local-flamegraph-clickhouse-pro"
   end
 
