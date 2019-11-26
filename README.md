@@ -27,12 +27,12 @@ thanks https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194
 ## Installation
 currently clickhouse-flamegraph required perl and flamegraph.pl for correct work, you can just download latest packages from  https://github.com/Slach/clickhouse-flamegraph/releases
 
-### Simplest way (but you should skip it if you case about security)
+### Simplest way, but you should skip it, if you care about security ;-)
 ```bash
 curl -sL https://raw.githubusercontent.com/Slach/clickhouse-flamegraph/master/install.sh | sudo bash
 ```
 
-### Linux (deb or rpm based distributive, amd64 architecture)
+### Linux deb or rpm based distributive, amd64 architecture
 ```bash
 PKG_MANAGER=$(command -v dpkg || command -v rpm)
 PKG_EXT=$(if [[ "${PKG_MANAGER}" == "/usr/bin/dpkg" ]]; then echo "deb"; else echo "rpm"; fi)
@@ -42,7 +42,7 @@ grep $PKG_EXT clickhouse-flamegraph_checksums.txt | sha256sum
 ${PKG_MANAGER} -i clickhouse-flamegraph*.${PKG_EXT}
 ```
 
-### MacOS (64bit)
+### MacOS 64bit
 ```bash
 brew install wget
 cd $TEMP
@@ -51,7 +51,7 @@ grep darwin_amd64.tar.gz clickhouse-flamegraph_checksums.txt | sha256sum
 tar -xvfz -C /usr/bin clickhouse-flamegraph*darwin_amd64.tar.gz
 ```
 
-### Windows (64bit) 
+### Windows 64bit)
 install CYGWIN https://cygwin.com/install.html 
 from setup.exe install following packages:
   - wget
