@@ -3,6 +3,7 @@
 .vagrant/
 flame-graphs/
 dist/
+id_rsa
 
 *.log
 *.a

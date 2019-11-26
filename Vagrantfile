@@ -73,6 +73,18 @@ Vagrant.configure(2) do |config|
     grep amd64.deb nfpm*checksums.txt | sha256sum
     dpkg -i $(cat nfpm*checksums.txt | grep amd64.deb | cut -d " " -f 2-)
 
+    mkdir -p -m 0700 /root/.ssh/
+    cp -fv /vagrant/id_rsa /root/.ssh/id_rsa
+    chmod 0600 /root/.ssh/id_rsa
+    touch /root/.ssh/known_hosts
+    ssh-keygen -R github.com
+    ssh-keygen -R bitbucket.org
+    ssh-keyscan -H github.com >> /root/.ssh/known_hosts
+    ssh-keyscan -H bitbucket.org >> /root/.ssh/known_hosts
+
+    git config --global url."git@github.com:".insteadOf "https://github.com/"
+    git config --global url."git@bitbucket.org:".insteadOf "https://bitbucket.org/"
+
     cd /vagrant/
     docker-compose down
     docker system prune -f
