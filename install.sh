@@ -9,14 +9,14 @@ sed -i -e "s/^\\/${GITHUB_USER}/https:\\/\\/github.com\\/${GITHUB_USER}/" /tmp/$
 
 if [[ "$OSTYPE" == "linux-gnu" ]]; then
     PKG_MANAGER=$( command -v yum || command -v apt-get )
-    $PKG_MANAGER install wget
+    $PKG_MANAGER install -y wget
     if [[ -n "$(dpkg -l)" ]] 2>/dev/null; then
         grep -E "\\.deb|\\.txt" /tmp/${PACKAGE_NAME}_urls.txt | wget -nv -c -i -
         PKG_MANAGER_LOCAL="dpkg -i"
         PKG_CHECKSUM_FILTER="amd64.deb"
     elif [[ -n "$(rpm -qa)" ]] 2>/dev/null; then
         grep -E "\\.rpm|\\.txt" /tmp/${PACKAGE_NAME}_urls.txt | wget -nv -c -i -
-        PKG_MANAGER_LOCAL="rpm"
+        PKG_MANAGER_LOCAL="rpm -i"
         PKG_CHECKSUM_FILTER="x86_64.rpm"
     else
         grep -E "\\linux_amd64.tar.gz|\\.txt" /tmp/${PACKAGE_NAME}_urls.txt | wget -nv -c -i -
