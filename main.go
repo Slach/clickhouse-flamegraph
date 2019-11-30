@@ -25,7 +25,7 @@ func main() {
 	app.Usage = "visualize clickhouse system.trace_log as flamegraph, based on https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194"
 	app.ArgsUsage = ""
 	app.HideHelp = false
-	app.Version = "2019.7.0"
+	app.Version = "2019.8.0"
 	app.Flags = []cli.Flag{
 		&cli.IntFlag{
 			Name:  "width",
