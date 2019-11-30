@@ -75,7 +75,7 @@ GLOBAL OPTIONS:
    --width value                               width of image (default 1200) (default: 1200)
    --height value                              height of each frame (default 16) (default: 16)
    --flamegraph-script value                   path of flamegraph.pl. if not given, find the script from $PATH [$CH_FLAME_FLAMEGRAPH_SCRIPT]
-   --output-dir value, -o value                destination path of generated flamegraphs files (default: "./clickouse-flamegraphs/") [$CH_FLAME_OUTPUT_DIR]
+   --output-dir value, -o value                destination path of generated flamegraphs files (default: "./clickhouse-flamegraphs/") [$CH_FLAME_OUTPUT_DIR]
    --date-from value, --from value             filter system.trace_log from date in any parsable format, see https://github.com/araddon/dateparse (default: current time - 5 min) [$CH_FLAME_DATE_FROM]
    --date-to value, --to value                 filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse (default: current time) [$CH_FLAME_DATE_TO]
    --query-filter value, --query-regexp value  filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax [$CH_FLAME_QUERY_FILTER]

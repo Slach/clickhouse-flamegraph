@@ -21,7 +21,7 @@ import (
 
 func main() {
 	app := cli.NewApp()
-	app.Name = "clickhose-flamegraph"
+	app.Name = "clickhouse-flamegraph"
 	app.Usage = "visualize clickhouse system.trace_log as flamegraph, based on https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194"
 	app.ArgsUsage = ""
 	app.HideHelp = false
@@ -45,7 +45,7 @@ func main() {
 		&cli.StringFlag{
 			Name:   "output-dir",
 			Aliases: []string{"o"},
-			Value:  "./clickouse-flamegraphs/",
+			Value:  "./clickhouse-flamegraphs/",
 			EnvVars: []string{"CH_FLAME_OUTPUT_DIR"},
 			Usage:  "destination path of generated flamegraphs files",
 		},
@@ -161,6 +161,10 @@ func generate(c *cli.Context) error {
 	}
 	if _, err := db.Exec("SYSTEM FLUSH LOGS"); err != nil {
 		log.Fatal().Err(err).Msg("SYSTEM FLUSH LOGS failed")
+	}
+	// create output-dir if not exits
+	if _, err := os.Stat(c.String("output-dir")); os.IsNotExist(err) {
+		os.MkdirAll(c.String("output-dir"), 0755)
 	}
 	// queryId -> stackFile descriptor
 	stackFiles := make(map[string]*os.File, 256)
