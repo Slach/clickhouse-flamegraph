@@ -237,7 +237,7 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, dateFrom t
 		queryIdSQL = formatSQLTemplate(
 			queryIdSQLTemplate,
 			map[string]interface{}{
-				"where": "type = 1 AND match(query_text, ?) AND event_time >= ? AND event_time <= ?",
+				"where": "type = 1 AND match(query, ?) AND event_time >= ? AND event_time <= ?",
 			},
 		)
 		queryFilterArgs = []interface{}{queryFilter, dateFrom, dateTo}
