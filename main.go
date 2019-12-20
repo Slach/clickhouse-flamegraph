@@ -263,7 +263,7 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, dateFrom t
 		return nil
 	})
 	if queryFilter != "" && len(queryIds) != 0 {
-		traceWhere += " AND query_id IN (\"" + strings.Join(queryIds, "\",\"") + "\") "
+		traceWhere += " AND query_id IN ('" + strings.Join(queryIds, "','") + "') "
 	}
 	return traceWhere
 }
