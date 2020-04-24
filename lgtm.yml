@@ -1,0 +1,7 @@
+extraction: 
+  go:
+    after_prepare:
+      - export PATH=$LGTM_WORKSPACE/tools:$PATH
+    index:
+      build_command:
+        - ./lgtm-compile.sh

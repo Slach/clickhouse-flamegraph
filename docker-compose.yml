@@ -6,6 +6,7 @@ services:
        - ./docker/clickhouse/profiling.xml:/etc/clickhouse-server/users.d/profiling.xml
      ports:
        - 9000:9000
+#    uncomment when you need not released functionality
 #    build:
 #      dockerfile: Docker-master
 #      context: docker/clickhouse
