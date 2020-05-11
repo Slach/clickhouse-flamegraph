@@ -1,9 +1,10 @@
 FROM ubuntu:18.04
 
-ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=19.13.1.*
-ARG gosu_ver=1.10
+ARG repository="deb http://repo.clickhouse.tech/deb/stable/ main/"
+ARG version=20.5.*
+ARG gosu_ver=1.12
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
@@ -11,8 +12,7 @@ RUN apt-get update \
         gnupg \
     && mkdir -p /etc/apt/sources.list.d \
     && apt-get update \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get install --allow-unauthenticated --yes --no-install-recommends \
+    && apt-get install --allow-unauthenticated --yes --no-install-recommends \
 #            clickhouse-common-static=$version \
 #            clickhouse-client=$version \
 #            clickhouse-server=$version \
@@ -20,12 +20,12 @@ RUN apt-get update \
             locales \
             tzdata \
             wget \
-    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-common-static-dbg_19.14.1.1284_amd64.deb \
-    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-common-static_19.14.1.1284_amd64.deb \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/10786/7342f46394147683c0122b46f238a6e0c6e20afb/clang-10_relwithdebuginfo_none_bundled_unsplitted_disable_deb/clickhouse-common-static-dbg_20.5.1.3316_amd64.deb \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/10786/7342f46394147683c0122b46f238a6e0c6e20afb/clang-10_relwithdebuginfo_none_bundled_unsplitted_disable_deb/clickhouse-common-static_20.5.1.3316_amd64.deb \
     && df -h && dpkg -i clickhouse-common-static*.deb && rm -rfv clickhouse-common-static*.deb \
-    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-client_19.14.1.1284_all.deb \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/10786/7342f46394147683c0122b46f238a6e0c6e20afb/clang-10_relwithdebuginfo_none_bundled_unsplitted_disable_deb/clickhouse-client_20.5.1.3316_all.deb \
     && df -h && dpkg -i clickhouse-client*.deb  && rm -rfv clickhouse-client*.deb \
-    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/0/b3e30d51c3460149df2e239ae43d0f572d8d1030/1567818476_deb/clickhouse-server_19.14.1.1284_all.deb \
+    && wget --no-check-certificate https://clickhouse-builds.s3.yandex.net/10786/7342f46394147683c0122b46f238a6e0c6e20afb/clang-10_relwithdebuginfo_none_bundled_unsplitted_disable_deb/clickhouse-server_20.5.1.3316_all.deb \
     && df -h && dpkg -i clickhouse-server*.deb && rm -rfv clickhouse-server*.deb \
     && rm -rf \
         /var/lib/apt/lists/* \

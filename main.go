@@ -70,6 +70,20 @@ func main() {
 			EnvVars: []string{"CH_FLAME_QUERY_FILTER"},
 			Value:  "",
 		},
+		&cli.StringSliceFlag{
+			Name:    "query-ids",
+			Aliases: []string{"query-id"},
+			Usage:   "filter system.query_log by query_id field, comma separated list",
+			EnvVars: []string{"CH_FLAME_QUERY_IDS"},
+			Value:   cli.NewStringSlice(),
+		},
+		&cli.StringSliceFlag{
+			Name:    "trace-types",
+			Aliases: []string{"trace-type"},
+			Usage:   "filter system.query_log by trace_type field, comma separated list",
+			EnvVars: []string{"CH_FLAME_TRACE_TYPES"},
+			Value:   cli.NewStringSlice("Real","CPU","Memory","MemorySample"),
+		},
 		&cli.StringFlag{
 			Name:   "clickhouse-dsn",
 			Aliases: []string{"dsn"},
@@ -114,11 +128,20 @@ WHERE {where}
 	traceSQLTemplate = `
 SELECT 
 	query_id,
+	trace_type,
+	sum(abs(size)) AS total_size,
 	count() AS samples, 
-	arrayStringConcat(arrayReverse(arrayMap(x -> concat( demangle(addressToSymbol(x)), '#', addressToLine(x) ), trace)), ';') AS stack
+	concat(
+		multiIf( 
+			position( toString(trace_type), 'Memory') > 0 AND sum(size) >= 0, 'allocate;',
+			position( toString(trace_type), 'Memory') > 0 AND sum(size) < 0, 'free;',
+			concat( toString(trace_type), ';')
+		),
+		arrayStringConcat(arrayReverse(arrayMap(x -> concat( demangle(addressToSymbol(x)), '#', addressToLine(x) ), trace)), ';')
+	) AS stack
 FROM system.trace_log
 WHERE {where}
-GROUP BY query_id, trace
+GROUP BY query_id, trace_type, trace
 `
 )
 
@@ -149,33 +172,36 @@ func parseDate(c *cli.Context, paramName string) time.Time {
 
 func generate(c *cli.Context) error {
 	queryFilter := c.String("query-filter")
+	queryIds := c.StringSlice("query-ids")
 	dsn := c.String("dsn")
 	dateFrom := parseDate(c, "date-from")
 	dateTo := parseDate(c, "date-to")
 
 	db, err := sql.Open("clickhouse", dsn)
 	if err != nil {
-		log.Fatal().Str("dsn", dsn).Err(err).Msg("Can't establishment clickhouse connection")
+		log.Fatal().Str("dsn", dsn).Err(err).Msg("Can't establishment ClickHouse connection")
 	} else {
-		log.Info().Str("dsn", dsn).Msg("conected to clickhouse")
+		log.Info().Str("dsn", dsn).Msg("connected to ClickHouse")
 	}
 	if _, err := db.Exec("SYSTEM FLUSH LOGS"); err != nil {
 		log.Fatal().Err(err).Msg("SYSTEM FLUSH LOGS failed")
 	}
 	// create output-dir if not exits
 	if _, err := os.Stat(c.String("output-dir")); os.IsNotExist(err) {
-		os.MkdirAll(c.String("output-dir"), 0755)
+		if err := os.MkdirAll(c.String("output-dir"), 0755); err!=nil {
+			log.Fatal().Err(err).Str("output-dir", c.String("output-dir")).Msg("Failed create output-dir")
+		}
 	}
 	// queryId -> stackFile descriptor
 	stackFiles := make(map[string]*os.File, 256)
 	where := " event_time >= ? AND event_time <= ?"
-	where = applyQueryFilter(db, c, queryFilter, dateFrom, dateTo, where)
+	where = applyQueryFilter(db, c, queryFilter, queryIds, dateFrom, dateTo, where)
 	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{"where": where})
 	stackArgs := []interface{}{dateFrom, dateTo}
 	fetchQuery(db, stackSQL, stackArgs, func(r map[string]interface{}) error {
-		fetchStack := func(queryId, stack string, samples uint64) {
-			if _, exists := stackFiles[queryId]; !exists {
-				stackFile := queryId
+		fetchStack := func(queryId, stack, traceType string, totalSize, samples uint64) {
+			if _, exists := stackFiles[queryId + "." + traceType]; !exists {
+				stackFile := queryId + "." + traceType
 				if c.String("output-format") == "json" {
 					stackFile += ".json"
 				} else {
@@ -185,7 +211,7 @@ func generate(c *cli.Context) error {
 				if f, err := os.Create(stackFile); err != nil {
 					log.Fatal().Err(err).Stack().Str("stackFile", stackFile).Send()
 				} else {
-					stackFiles[queryId] = f
+					stackFiles[queryId + "." + traceType] = f
 				}
 				if c.String("output-format") == "json" {
 					if _, err := stackFiles[queryId].WriteString("[\n"); err != nil {
@@ -197,22 +223,35 @@ func generate(c *cli.Context) error {
 			if c.String("output-format") == "json" {
 				outputFormat = " {\"stack\":\"%s\", \"Value\": %d},\n"
 			}
-			if _, err := stackFiles[queryId].WriteString(fmt.Sprintf(outputFormat, stack, samples)); err != nil {
-				log.Fatal().Err(err).Stack().Send()
+			if strings.Contains(traceType, "Memory") {
+				if _, err := stackFiles[queryId + "." + traceType].WriteString(fmt.Sprintf(outputFormat, stack, totalSize)); err != nil {
+					log.Fatal().Err(err).Stack().Send()
+				}
+			} else {
+				if _, err := stackFiles[queryId + "." + traceType].WriteString(fmt.Sprintf(outputFormat, stack, samples)); err != nil {
+					log.Fatal().Err(err).Stack().Send()
+				}
 			}
 
 		}
+
 		queryId := r["query_id"].(string)
 		stack := r["stack"].(string)
+		traceType := r["trace_type"].(string)
+		totalSize := r["total_size"].(uint64)
 		samples := r["samples"].(uint64)
-		fetchStack(queryId, stack, samples)
-		fetchStack("global", stack, samples)
+
+		fetchStack(queryId, stack, traceType, totalSize, samples)
+		fetchStack("global", stack, traceType, totalSize, samples)
 		return nil
 	})
 
-	for queryId, stackFile := range stackFiles {
+	for stackKey, stackFile := range stackFiles {
+		stackKeys := strings.Split(stackKey, ".")
+		queryId := stackKeys[0]
+		traceType := stackKeys[1]
 		if c.String("output-format") == "json" {
-			if _, err := stackFiles[queryId].WriteString("{}]\n"); err != nil {
+			if _, err := stackFile.WriteString("{}]\n"); err != nil {
 				log.Fatal().Err(err).Stack().Send()
 			}
 		}
@@ -220,16 +259,17 @@ func generate(c *cli.Context) error {
 			log.Fatal().Err(err).Str("stackFile", stackFile.Name()).Send()
 		}
 		if c.String("output-format") == "txt" || c.String("output-format") == "svg" {
-			writeSVG(c, queryId, stackFile.Name())
+			writeSVG(c, queryId, traceType, stackFile.Name())
 		}
 	}
 	log.Info().Int("processedFiles", len(stackFiles)).Msg("done processing")
 	return nil
 }
 
-func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, dateFrom time.Time, dateTo time.Time, traceWhere string) string {
+func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds []string, dateFrom time.Time, dateTo time.Time, traceWhere string) string {
 	var queryIdSQL string
 	var queryFilterArgs []interface{}
+
 	if queryFilter != "" {
 		if _, err := regexp.Compile(queryFilter); err != nil {
 			log.Fatal().Err(err).Str("queryFilter", queryFilter).Msg("Invalid regexp")
@@ -241,7 +281,7 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, dateFrom t
 			},
 		)
 		queryFilterArgs = []interface{}{queryFilter, dateFrom, dateTo}
-	} else {
+	} else if len(queryIds) == 0 {
 		queryIdSQL = formatSQLTemplate(
 			queryIdSQLTemplate,
 			map[string]interface{}{
@@ -249,20 +289,20 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, dateFrom t
 			},
 		)
 		queryFilterArgs = []interface{}{dateFrom, dateTo}
-
 	}
-	var queryIds = make([]string, 0, 128)
-	fetchQuery(db, queryIdSQL, queryFilterArgs, func(r map[string]interface{}) error {
-		queryId := r["query_id"].(string)
-		query := r["query"].(string)
-		sqlFile := filepath.Join(c.String("output-dir"), queryId+".sql")
-		if err := ioutil.WriteFile(sqlFile, []byte(query), 0644); err != nil {
-			log.Fatal().Err(err).Str("sqlFile", sqlFile)
-		}
-		queryIds = append(queryIds, queryId)
-		return nil
-	})
-	if queryFilter != "" && len(queryIds) != 0 {
+	if queryIdSQL != "" {
+		fetchQuery(db, queryIdSQL, queryFilterArgs, func(r map[string]interface{}) error {
+			queryId := r["query_id"].(string)
+			query := r["query"].(string)
+			sqlFile := filepath.Join(c.String("output-dir"), queryId+".sql")
+			if err := ioutil.WriteFile(sqlFile, []byte(query), 0644); err != nil {
+				log.Fatal().Err(err).Stack().Str("sqlFile", sqlFile).Send()
+			}
+			queryIds = append(queryIds, queryId)
+			return nil
+		})
+	}
+	if len(queryIds) != 0 {
 		traceWhere += " AND query_id IN ('" + strings.Join(queryIds, "','") + "') "
 	}
 	return traceWhere
@@ -270,7 +310,7 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, dateFrom t
 
 func findFlameGraphScript(c *cli.Context) string {
 	if script := c.String("flamegraph-script"); script != "" {
-		log.Debug().Msgf("script: %s", script)
+		log.Debug().Msgf("set flamegraph-script: %s", script)
 		if _, err := os.Stat(script); err == nil {
 			return script
 		}
@@ -285,22 +325,27 @@ func findFlameGraphScript(c *cli.Context) string {
 	return ""
 }
 
-func writeSVG(c *cli.Context, queryId string, stackName string) {
+func writeSVG(c *cli.Context, queryId, traceType string, stackName string) {
 	// @TODO DEV/2h advanced title generation logic
-	title := fmt.Sprintf("Clickhouse queryId %s from %s to %s", queryId, c.String("date-from"), c.String("date-to"))
+	title := fmt.Sprintf("Clickhouse queryId %s (%s) from %s to %s", queryId, traceType, c.String("date-from"), c.String("date-to"))
+	countName := "samples"
+	if strings.Contains(traceType, "Memory") {
+		countName = "bytes"
+	}
 	args := []string{
 		"--title", title,
 		"--width", fmt.Sprintf("%d", c.Int("width")),
 		"--height", fmt.Sprintf("%d", c.Int("height")),
-		"--countname", "samples",
-		"--nametype", "Stack",
+		"--countname", countName,
+		"--nametype", traceType,
 		//"--colors", "aqua",
 	}
 	stackFile, err := os.Open(stackName)
 	if err != nil {
-		log.Fatal().Stack().Err(err).Str("stackFile", stackName)
+		log.Fatal().Stack().Err(err).Str("stackFile", stackName).Send()
 	}
 	script := findFlameGraphScript(c)
+	log.Debug().Str("script",script).Strs("args",args).Send()
 	cmd := exec.Command(script, args...)
 	cmd.Stdin = stackFile
 	cmd.Stderr = os.Stderr
@@ -310,7 +355,7 @@ func writeSVG(c *cli.Context, queryId string, stackName string) {
 		log.Fatal().Msgf("writeSVG: failed to run script %s : %s", script, err)
 	}
 
-	fileName := filepath.Join(c.String("output-dir"), queryId+".svg")
+	fileName := filepath.Join(c.String("output-dir"), queryId+"." + traceType +".svg")
 	if err := ioutil.WriteFile(fileName, svg, 0644); err != nil {
 		log.Fatal().Err(err).Str("fileName", fileName).Msg("can't write to svg")
 	}
@@ -377,6 +422,6 @@ func fetchQuery(db *sql.DB, sql string, sqlArgs []interface{}, fetchCallback fun
 		}
 	}
 	if err := rows.Close(); err != nil {
-		log.Fatal().Err(err).Interface("rows", rows)
+		log.Fatal().Err(err).Interface("rows", rows).Stack().Send()
 	}
 }

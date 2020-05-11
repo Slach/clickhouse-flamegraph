@@ -5,20 +5,56 @@ thanks https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194
 ![Output example](docs/clickhouse-flamegraph.png?raw=1 "example SVG")
 
 ### Prepare Clickhouse server
-- install clickhouse-server package version 19.14 or higher as described in [documentation](https://clickhouse.yandex/#quick-start)
+- install clickhouse-server package version 20.5 or higher as described in [documentation](https://clickhouse.tech/docs/en/getting-started/install/)
 - install clickhouse-common-static-dbg package
 - enable query_log and sampling profiling in settings on each server in your cluster for example add following files:
-####  /etc/clickhouse-server/users.d/profiling.xml
+####  create /etc/clickhouse-server/config.d/profiling.xml (need server restart to apply changes)
+```xml
+<yandex>
+    <!-- Simple server-wide memory profiler. Collect a stack trace at every peak allocation step (in bytes).
+         Data will be stored in system.trace_log table with query_id = empty string.
+         Zero means disabled. Minimal effective value is 4 MiB.
+         Data will dump with 'Memory' trace_type
+      -->
+    <total_memory_profiler_step>4194304</total_memory_profiler_step>
+    <!-- Collect random allocations and deallocations and write them into system.trace_log with 'MemorySample' trace_type.
+            The probability is for every alloc/free regardless to the size of the allocation.
+            Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit,
+             which is 4 MiB by default but can be lowered if 'total_memory_profiler_step' is lowered.
+            You may want to set 'total_memory_profiler_step' to 1 for extra fine grained sampling.
+         -->
+    <total_memory_tracker_sample_probability>0.01</total_memory_tracker_sample_probability>
+</yandex>
+```
+####  create /etc/clickhouse-server/users.d/profiling.xml (config reloaded every 1sec or via SYSTEM CONFIG RELOAD)
 ```xml
 <yandex>
     <profiles>
-        <!-- see details about profile name https://clickhouse.yandex/docs/en/operations/settings/settings_profiles/ and https://clickhouse.yandex/docs/en/operations/server_settings/settings/#default-profile -->
         <default>
             <log_queries>1</log_queries>
             <allow_introspection_functions>1</allow_introspection_functions>
-            <!-- cluster wide 25 times per second sampling profiler -->
+            <!-- 25 times per second sampling profiler -->
             <query_profiler_real_time_period_ns>40000000</query_profiler_real_time_period_ns>
             <query_profiler_cpu_time_period_ns>40000000</query_profiler_cpu_time_period_ns>
+
+            <!-- memory profiling for each query, dump stack trace when 1MiB allocation with query_id not empty
+            Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler 
+            will collect the allocating stack trace. 
+            Zero means disabled memory profiler. 
+            Values lower than a few megabytes will slow down query processing. 
+            -->
+            <memory_profiler_step>1048576</memory_profiler_step>
+            <!-- Small allocations and deallocations are grouped in thread local variable and tracked or profiled only 
+                when amount (in absolute value) becomes larger than specified value. 
+                If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
+            -->
+            <max_untracked_memory>1048576</max_untracked_memory>            
+            <!-- Collect random allocations and deallocations and write them into system.trace_log with 'MemorySample' trace_type. 
+                 The probability is for every alloc/free regardless to the size of the allocation. 
+                 Note that sampling happens only when the amount of untracked memory exceeds 'max_untracked_memory'. 
+                 You may want to set 'max_untracked_memory' to 0 for extra fine grained sampling. -->
+            <memory_profiler_sample_probability>0.01</memory_profiler_sample_probability>    
+
         </default>
     </profiles>
 </yandex>
