@@ -28,7 +28,7 @@ archives:
 nfpms:
   -
     id: clickhouse-flamegraph
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
       - clickhouse-flamegraph
     homepage: https://github.com/Slach/clickhouse-flamegraph
@@ -50,7 +50,7 @@ nfpms:
       rpm:
         replacements:
           amd64: x86_64
-        name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}"
+        file_name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}"
 release:
   github:
     owner: Slach
