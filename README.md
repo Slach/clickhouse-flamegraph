@@ -87,7 +87,7 @@ grep darwin_amd64.tar.gz clickhouse-flamegraph_checksums.txt | sha256sum
 tar -xvfz -C /usr/bin clickhouse-flamegraph*darwin_amd64.tar.gz
 ```
 
-### Windows 64bit)
+### Windows 64bit
 install CYGWIN https://cygwin.com/install.html 
 from setup.exe install following packages:
   - wget

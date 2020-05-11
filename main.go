@@ -38,37 +38,37 @@ func main() {
 			Usage: "height of each frame (default 16)",
 		},
 		&cli.StringFlag{
-			Name:   "flamegraph-script",
+			Name:    "flamegraph-script",
 			EnvVars: []string{"CH_FLAME_FLAMEGRAPH_SCRIPT"},
-			Usage:  "path of flamegraph.pl. if not given, find the script from $PATH",
+			Usage:   "path of flamegraph.pl. if not given, find the script from $PATH",
 		},
 		&cli.StringFlag{
-			Name:   "output-dir",
+			Name:    "output-dir",
 			Aliases: []string{"o"},
-			Value:  "./clickhouse-flamegraphs/",
+			Value:   "./clickhouse-flamegraphs/",
 			EnvVars: []string{"CH_FLAME_OUTPUT_DIR"},
-			Usage:  "destination path of generated flamegraphs files",
+			Usage:   "destination path of generated flamegraphs files",
 		},
 		&cli.StringFlag{
-			Name:   "date-from",
+			Name:    "date-from",
 			Aliases: []string{"from"},
-			Usage:  "filter system.trace_log from date in any parsable format, see https://github.com/araddon/dateparse",
+			Usage:   "filter system.trace_log from date in any parsable format, see https://github.com/araddon/dateparse",
 			EnvVars: []string{"CH_FLAME_DATE_FROM"},
-			Value:  time.Now().Add(time.Duration(-5) * time.Minute).Format("2006-01-02 15:04:05 -0700"),
+			Value:   time.Now().Add(time.Duration(-5) * time.Minute).Format("2006-01-02 15:04:05 -0700"),
 		},
 		&cli.StringFlag{
-			Name:   "date-to",
+			Name:    "date-to",
 			Aliases: []string{"to"},
-			Usage:  "filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse",
+			Usage:   "filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse",
 			EnvVars: []string{"CH_FLAME_DATE_TO"},
-			Value:  time.Now().Format("2006-01-02 15:04:05 -0700"),
+			Value:   time.Now().Format("2006-01-02 15:04:05 -0700"),
 		},
 		&cli.StringFlag{
-			Name:   "query-filter",
+			Name:    "query-filter",
 			Aliases: []string{"query-regexp"},
-			Usage:  "filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax",
+			Usage:   "filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax",
 			EnvVars: []string{"CH_FLAME_QUERY_FILTER"},
-			Value:  "",
+			Value:   "",
 		},
 		&cli.StringSliceFlag{
 			Name:    "query-ids",
@@ -82,31 +82,31 @@ func main() {
 			Aliases: []string{"trace-type"},
 			Usage:   "filter system.query_log by trace_type field, comma separated list",
 			EnvVars: []string{"CH_FLAME_TRACE_TYPES"},
-			Value:   cli.NewStringSlice("Real","CPU","Memory","MemorySample"),
+			Value:   cli.NewStringSlice("Real", "CPU", "Memory", "MemorySample"),
 		},
 		&cli.StringFlag{
-			Name:   "clickhouse-dsn",
+			Name:    "clickhouse-dsn",
 			Aliases: []string{"dsn"},
-			Usage:  "clickhouse connection string, see https://github.com/ClickHouse/clickhouse-go#dsn",
+			Usage:   "clickhouse connection string, see https://github.com/ClickHouse/clickhouse-go#dsn",
 			EnvVars: []string{"CH_FLAME_CLICKHOUSE_DSN"},
-			Value:  "tcp://localhost:9000?database=default",
+			Value:   "tcp://localhost:9000?database=default",
 		},
 		&cli.StringFlag{
-			Name:   "output-format",
+			Name:    "output-format",
 			Aliases: []string{"format"},
-			Usage:  "accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format, ",
+			Usage:   "accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format, ",
 			EnvVars: []string{"CH_FLAME_OUTPUT_FORMAT"},
-			Value:  "svg",
+			Value:   "svg",
 		},
 		&cli.BoolFlag{
-			Name:   "debug",
+			Name:    "debug",
 			Aliases: []string{"verbose"},
-			Usage:  "show debug log",
+			Usage:   "show debug log",
 			EnvVars: []string{"CH_FLAME_DEBUG"},
 		},
 		&cli.BoolFlag{
-			Name:   "console",
-			Usage:  "output logs to console format instead of json",
+			Name:    "console",
+			Usage:   "output logs to console format instead of json",
 			EnvVars: []string{"CH_FLAME_LOG_TO_CONSOLE"},
 		},
 	}
@@ -173,6 +173,7 @@ func parseDate(c *cli.Context, paramName string) time.Time {
 func generate(c *cli.Context) error {
 	queryFilter := c.String("query-filter")
 	queryIds := c.StringSlice("query-ids")
+	traceTypes := c.StringSlice("trace-types")
 	dsn := c.String("dsn")
 	dateFrom := parseDate(c, "date-from")
 	dateTo := parseDate(c, "date-to")
@@ -188,19 +189,19 @@ func generate(c *cli.Context) error {
 	}
 	// create output-dir if not exits
 	if _, err := os.Stat(c.String("output-dir")); os.IsNotExist(err) {
-		if err := os.MkdirAll(c.String("output-dir"), 0755); err!=nil {
+		if err := os.MkdirAll(c.String("output-dir"), 0755); err != nil {
 			log.Fatal().Err(err).Str("output-dir", c.String("output-dir")).Msg("Failed create output-dir")
 		}
 	}
 	// queryId -> stackFile descriptor
 	stackFiles := make(map[string]*os.File, 256)
-	where := " event_time >= ? AND event_time <= ?"
+	where := " trace_type IN (?) AND event_time >= ? AND event_time <= ?"
 	where = applyQueryFilter(db, c, queryFilter, queryIds, dateFrom, dateTo, where)
 	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{"where": where})
-	stackArgs := []interface{}{dateFrom, dateTo}
+	stackArgs := []interface{}{traceTypes, dateFrom, dateTo}
 	fetchQuery(db, stackSQL, stackArgs, func(r map[string]interface{}) error {
 		fetchStack := func(queryId, stack, traceType string, totalSize, samples uint64) {
-			if _, exists := stackFiles[queryId + "." + traceType]; !exists {
+			if _, exists := stackFiles[queryId+"."+traceType]; !exists {
 				stackFile := queryId + "." + traceType
 				if c.String("output-format") == "json" {
 					stackFile += ".json"
@@ -211,7 +212,7 @@ func generate(c *cli.Context) error {
 				if f, err := os.Create(stackFile); err != nil {
 					log.Fatal().Err(err).Stack().Str("stackFile", stackFile).Send()
 				} else {
-					stackFiles[queryId + "." + traceType] = f
+					stackFiles[queryId+"."+traceType] = f
 				}
 				if c.String("output-format") == "json" {
 					if _, err := stackFiles[queryId].WriteString("[\n"); err != nil {
@@ -224,11 +225,11 @@ func generate(c *cli.Context) error {
 				outputFormat = " {\"stack\":\"%s\", \"Value\": %d},\n"
 			}
 			if strings.Contains(traceType, "Memory") {
-				if _, err := stackFiles[queryId + "." + traceType].WriteString(fmt.Sprintf(outputFormat, stack, totalSize)); err != nil {
+				if _, err := stackFiles[queryId+"."+traceType].WriteString(fmt.Sprintf(outputFormat, stack, totalSize)); err != nil {
 					log.Fatal().Err(err).Stack().Send()
 				}
 			} else {
-				if _, err := stackFiles[queryId + "." + traceType].WriteString(fmt.Sprintf(outputFormat, stack, samples)); err != nil {
+				if _, err := stackFiles[queryId+"."+traceType].WriteString(fmt.Sprintf(outputFormat, stack, samples)); err != nil {
 					log.Fatal().Err(err).Stack().Send()
 				}
 			}
@@ -345,7 +346,7 @@ func writeSVG(c *cli.Context, queryId, traceType string, stackName string) {
 		log.Fatal().Stack().Err(err).Str("stackFile", stackName).Send()
 	}
 	script := findFlameGraphScript(c)
-	log.Debug().Str("script",script).Strs("args",args).Send()
+	log.Debug().Str("script", script).Strs("args", args).Send()
 	cmd := exec.Command(script, args...)
 	cmd.Stdin = stackFile
 	cmd.Stderr = os.Stderr
@@ -355,7 +356,7 @@ func writeSVG(c *cli.Context, queryId, traceType string, stackName string) {
 		log.Fatal().Msgf("writeSVG: failed to run script %s : %s", script, err)
 	}
 
-	fileName := filepath.Join(c.String("output-dir"), queryId+"." + traceType +".svg")
+	fileName := filepath.Join(c.String("output-dir"), queryId+"."+traceType+".svg")
 	if err := ioutil.WriteFile(fileName, svg, 0644); err != nil {
 		log.Fatal().Err(err).Str("fileName", fileName).Msg("can't write to svg")
 	}
