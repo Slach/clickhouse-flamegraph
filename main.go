@@ -185,7 +185,10 @@ func generate(c *cli.Context) error {
 		log.Info().Str("dsn", dsn).Msg("connected to ClickHouse")
 	}
 	if _, err := db.Exec("SYSTEM FLUSH LOGS"); err != nil {
-		log.Fatal().Err(err).Msg("SYSTEM FLUSH LOGS failed")
+		log.Fatal().Err(err).Stack().Msg("SYSTEM FLUSH LOGS failed")
+	}
+	if _, err := db.Exec("SET allow_introspection_functions=1"); err != nil {
+		log.Fatal().Err(err).Stack().Msg("SET allow_introspection_functions=1 failed")
 	}
 	// create output-dir if not exits
 	if _, err := os.Stat(c.String("output-dir")); os.IsNotExist(err) {
