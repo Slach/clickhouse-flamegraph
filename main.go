@@ -80,7 +80,7 @@ func main() {
 		&cli.StringSliceFlag{
 			Name:    "trace-types",
 			Aliases: []string{"trace-type"},
-			Usage:   "filter system.query_log by trace_type field, comma separated list",
+			Usage:   "filter system.trace_log by trace_type field, comma separated list",
 			EnvVars: []string{"CH_FLAME_TRACE_TYPES"},
 			Value:   cli.NewStringSlice("Real", "CPU", "Memory", "MemorySample"),
 		},
