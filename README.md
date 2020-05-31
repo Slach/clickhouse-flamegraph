@@ -112,15 +112,17 @@ GLOBAL OPTIONS:
    --height value                              height of each frame (default 16) (default: 16)
    --flamegraph-script value                   path of flamegraph.pl. if not given, find the script from $PATH [$CH_FLAME_FLAMEGRAPH_SCRIPT]
    --output-dir value, -o value                destination path of generated flamegraphs files (default: "./clickhouse-flamegraphs/") [$CH_FLAME_OUTPUT_DIR]
-   --date-from value, --from value             filter system.trace_log from date in any parsable format, see https://github.com/araddon/dateparse (default: "2020-05-11 05:39:03 +0000") [$CH_FLAME_DATE_FROM]
-   --date-to value, --to value                 filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse (default: "2020-05-11 05:44:03 +0000") [$CH_FLAME_DATE_TO]
+   --date-from value, --from value             filter system.trace_log from date in any parsable format, see https://github.com/araddon/dateparse (default: "2020-05-31 18:16:57 +0000") [$CH_FLAME_DATE_FROM]
+   --date-to value, --to value                 filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse (default: "2020-05-31 18:21:57 +0000") [$CH_FLAME_DATE_TO]
    --query-filter value, --query-regexp value  filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax [$CH_FLAME_QUERY_FILTER]
    --query-ids value, --query-id value         filter system.query_log by query_id field, comma separated list [$CH_FLAME_QUERY_IDS]
-   --trace-types value, --trace-type value     filter system.query_log by trace_type field, comma separated list (default: "Real", "CPU", "Memory", "MemorySample") [$CH_FLAME_TRACE_TYPES]
+   --trace-types value, --trace-type value     filter system.trace_log by trace_type field, comma separated list (default: "Real", "CPU", "Memory", "MemorySample") [$CH_FLAME_TRACE_TYPES]
    --clickhouse-dsn value, --dsn value         clickhouse connection string, see https://github.com/ClickHouse/clickhouse-go#dsn (default: "tcp://localhost:9000?database=default") [$CH_FLAME_CLICKHOUSE_DSN]
    --output-format value, --format value       accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format,  (default: "svg") [$CH_FLAME_OUTPUT_FORMAT]
    --debug, --verbose                          show debug log (default: false) [$CH_FLAME_DEBUG]
    --console                                   output logs to console format instead of json (default: false) [$CH_FLAME_LOG_TO_CONSOLE]
+   --help, -h                                  show help (default: false)
+   --version, -v                               print the version (default: false)
 ```                         
 
 ## Tips&Tricks
