@@ -7,9 +7,9 @@ services:
     ports:
      - 9000:9000
 #    uncomment when you need not released functionality
-    build:
-      dockerfile: Docker-master
-      context: docker/clickhouse
+#    build:
+#      dockerfile: Docker-master
+#      context: docker/clickhouse
   clickhouse-flamegraph:
     image: clickhousepro/clickhouse-flamegraph
     volumes:

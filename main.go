@@ -198,10 +198,10 @@ func generate(c *cli.Context) error {
 	}
 	// queryId -> stackFile descriptor
 	stackFiles := make(map[string]*os.File, 256)
-	where := " trace_type IN (?) AND event_time >= ? AND event_time <= ?"
-	where = applyQueryFilter(db, c, queryFilter, queryIds, dateFrom, dateTo, where)
-	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{"where": where})
+	stackWhere := " trace_type IN (?) AND event_time >= ? AND event_time <= ?"
 	stackArgs := []interface{}{traceTypes, dateFrom, dateTo}
+	stackWhere, stackArgs = applyQueryFilter(db, c, queryFilter, queryIds, dateFrom, dateTo, stackWhere, stackArgs)
+	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{"where": stackWhere})
 	fetchQuery(db, stackSQL, stackArgs, func(r map[string]interface{}) error {
 		fetchStack := func(queryId, stack, traceType string, totalSize, samples uint64) {
 			if _, exists := stackFiles[queryId+"."+traceType]; !exists {
@@ -245,7 +245,9 @@ func generate(c *cli.Context) error {
 		totalSize := r["total_size"].(uint64)
 		samples := r["samples"].(uint64)
 
-		fetchStack(queryId, stack, traceType, totalSize, samples)
+		if queryId != "" {
+			fetchStack(queryId, stack, traceType, totalSize, samples)
+		}
 		fetchStack("global", stack, traceType, totalSize, samples)
 		return nil
 	})
@@ -270,32 +272,40 @@ func generate(c *cli.Context) error {
 	return nil
 }
 
-func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds []string, dateFrom time.Time, dateTo time.Time, traceWhere string) string {
+func addWhereArgs(where, addWhere string, args []interface{}, addArg interface{}) (string, []interface{}) {
+	where += addWhere
+	args = append(args, addArg)
+	return where, args
+}
+
+func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds []string, dateFrom time.Time, dateTo time.Time, stackWhere string, stackArgs []interface{}) (string, []interface{}) {
 	var queryIdSQL string
-	var queryFilterArgs []interface{}
+	var queryIdWhere string
+	var queryIdArgs []interface{}
+	queryIdWhere = "type = 1 AND event_time >= ? AND event_time <= ?"
+	queryIdArgs = []interface{}{dateFrom, dateTo}
 
 	if queryFilter != "" {
 		if _, err := regexp.Compile(queryFilter); err != nil {
 			log.Fatal().Err(err).Str("queryFilter", queryFilter).Msg("Invalid regexp")
 		}
-		queryIdSQL = formatSQLTemplate(
-			queryIdSQLTemplate,
-			map[string]interface{}{
-				"where": "type = 1 AND match(query, ?) AND event_time >= ? AND event_time <= ?",
-			},
-		)
-		queryFilterArgs = []interface{}{queryFilter, dateFrom, dateTo}
-	} else if len(queryIds) == 0 {
-		queryIdSQL = formatSQLTemplate(
-			queryIdSQLTemplate,
-			map[string]interface{}{
-				"where": "type = 1 AND event_time >= ? AND event_time <= ?",
-			},
-		)
-		queryFilterArgs = []interface{}{dateFrom, dateTo}
+		queryIdWhere, queryIdArgs = addWhereArgs(queryIdWhere, " AND match(query, ?) ", queryIdArgs, queryFilter)
+		stackWhere, stackArgs = addWhereArgs(stackWhere, " AND match(query, ?) ", stackArgs, queryFilter)
 	}
+	if len(queryIds) != 0 {
+		queryIdWhere, queryIdArgs = addWhereArgs(queryIdWhere, " AND query_id IN (?) ", queryIdArgs, queryIds)
+		stackWhere, stackArgs = addWhereArgs(stackWhere, " AND query_id IN (?) ", stackArgs, queryIds)
+	}
+
+	queryIdSQL = formatSQLTemplate(
+		queryIdSQLTemplate,
+		map[string]interface{}{
+			"where": queryIdWhere,
+		},
+	)
+
 	if queryIdSQL != "" {
-		fetchQuery(db, queryIdSQL, queryFilterArgs, func(r map[string]interface{}) error {
+		fetchQuery(db, queryIdSQL, queryIdArgs, func(r map[string]interface{}) error {
 			queryId := r["query_id"].(string)
 			query := r["query"].(string)
 			sqlFile := filepath.Join(c.String("output-dir"), queryId+".sql")
@@ -305,11 +315,9 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds [
 			queryIds = append(queryIds, queryId)
 			return nil
 		})
+		log.Info().Int("len(queryIds)", len(queryIds)).Msg("write .sql files")
 	}
-	if len(queryIds) != 0 {
-		traceWhere += " AND query_id IN ('" + strings.Join(queryIds, "','") + "') "
-	}
-	return traceWhere
+	return stackWhere, stackArgs
 }
 
 func findFlameGraphScript(c *cli.Context) string {
@@ -407,7 +415,7 @@ func fetchRowAsMap(rows *sql.Rows, cols []string) (m map[string]interface{}, err
 func fetchQuery(db *sql.DB, sql string, sqlArgs []interface{}, fetchCallback func(r map[string]interface{}) error) {
 	rows, err := db.Query(sql, sqlArgs...)
 	if err != nil {
-		if exception, is_exception := err.(*clickhouse.Exception); is_exception {
+		if exception, isException := err.(*clickhouse.Exception); isException {
 			log.Fatal().Err(err).Int32("code", exception.Code).Str("message", exception.Message).Str("stacktrace", exception.StackTrace).Send()
 		} else {
 			log.Fatal().Err(err).Str("sql", sql).Str("sqlArgs", fmt.Sprintf("%v", sqlArgs)).Msg("query error")
