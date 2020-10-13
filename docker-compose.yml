@@ -4,8 +4,11 @@ services:
     image: yandex/clickhouse-server:latest
     volumes:
      - ./docker/clickhouse/profiling.xml:/etc/clickhouse-server/users.d/profiling.xml
+     - ./docker/clickhouse/tls.xml:/etc/clickhouse-server/config.d/tls.xml
+     - ./docker/clickhouse/ssl/:/etc/clickhouse-server/ssl/
     ports:
-     - 9000:9000
+     - 8123:8123
+     - 8443:8443
 #    uncomment when you need not released functionality
 #    build:
 #      dockerfile: Docker-master

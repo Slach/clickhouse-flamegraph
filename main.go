@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"fmt"
 	"io/ioutil"
@@ -12,10 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go"
 	"github.com/araddon/dateparse"
+	"github.com/mailru/go-clickhouse"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog/pkgerrors"
 	"github.com/urfave/cli/v2"
 )
 
@@ -40,7 +44,8 @@ func main() {
 		&cli.StringFlag{
 			Name:    "flamegraph-script",
 			EnvVars: []string{"CH_FLAME_FLAMEGRAPH_SCRIPT"},
-			Usage:   "path of flamegraph.pl. if not given, find the script from $PATH",
+			Value:   "flamegraph.pl",
+			Usage:   "path to script which run SVG flamegraph generation, can be passed without full path, will try to find the script from $PATH",
 		},
 		&cli.StringFlag{
 			Name:    "output-dir",
@@ -87,9 +92,34 @@ func main() {
 		&cli.StringFlag{
 			Name:    "clickhouse-dsn",
 			Aliases: []string{"dsn"},
-			Usage:   "clickhouse connection string, see https://github.com/ClickHouse/clickhouse-go#dsn",
+			Usage:   "clickhouse connection string, see https://github.com/mailru/go-clickhouse#dsn",
 			EnvVars: []string{"CH_FLAME_CLICKHOUSE_DSN"},
-			Value:   "tcp://localhost:9000?database=default",
+			Value:   "http://localhost:8123?database=default",
+		},
+		&cli.StringFlag{
+			Name:    "clickhouse-cluster",
+			Aliases: []string{"cluster"},
+			Usage:   "clickhouse cluster name from system.clusters, all flame graphs will get from cluster() function, see https://clickhouse.tech/docs/en/sql-reference/table-functions/cluster",
+			EnvVars: []string{"CH_FLAME_CLICKHOUSE_CLUSTER"},
+			Value:   "",
+		},
+		&cli.StringFlag{
+			Name:    "tls-certificate",
+			Usage:   "X509 *.cer, *.crt or *.pem file for https connection, use only if tls_config exists in --dsn, see https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
+			EnvVars: []string{"CH_FLAME_TLS_CERT"},
+			Value:   "",
+		},
+		&cli.StringFlag{
+			Name:    "tls-key",
+			Usage:   "X509 *.key file for https connection, use only if tls_config exists in --dsn",
+			EnvVars: []string{"CH_FLAME_TLS_KEY"},
+			Value:   "",
+		},
+		&cli.StringFlag{
+			Name:    "tls-ca",
+			Usage:   "X509 *.cer, *.crt or *.pem file used with https connection for self-signed certificate, use only if tls_config exists in --dsn, see https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
+			EnvVars: []string{"CH_FLAME_TLS_CA"},
+			Value:   "",
 		},
 		&cli.StringFlag{
 			Name:    "output-format",
@@ -97,6 +127,12 @@ func main() {
 			Usage:   "accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format, ",
 			EnvVars: []string{"CH_FLAME_OUTPUT_FORMAT"},
 			Value:   "svg",
+		},
+		&cli.BoolFlag{
+			Name:    "normalize-query",
+			Aliases: []string{"normalize"},
+			Usage:   "group stack by normalized queries, instead of query_id, see https://clickhouse.tech/docs/en/sql-reference/functions/string-functions/#normalized-query",
+			EnvVars: []string{"CH_FLAME_NORMALIZE_QUERY"},
 		},
 		&cli.BoolFlag{
 			Name:    "debug",
@@ -119,15 +155,15 @@ func main() {
 
 var (
 	queryIdSQLTemplate = `
-SELECT 
-	query, query_id 
-FROM system.query_log
+SELECT DISTINCT hostName() AS host_name, {queryField}, {queryIdField} 
+FROM {from}
 WHERE {where}
 `
 
 	traceSQLTemplate = `
 SELECT 
-	query_id,
+	hostName() AS host_name,
+    {queryIdField},
 	trace_type,
 	sum(abs(size)) AS total_size,
 	count() AS samples, 
@@ -139,15 +175,16 @@ SELECT
 		),
 		arrayStringConcat(arrayReverse(arrayMap(x -> concat( demangle(addressToSymbol(x)), '#', addressToLine(x) ), trace)), ';')
 	) AS stack
-FROM system.trace_log
+FROM {from}
 WHERE {where}
-GROUP BY query_id, trace_type, trace
+GROUP BY host_name, query_id, trace_type, trace
+SETTINGS allow_introspection_functions=1
 `
 )
 
 func run(c *cli.Context) error {
 	stdlog.SetOutput(log.Logger)
-	clickhouse.SetLogOutput(log.Logger)
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 	if c.Bool("verbose") {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	} else {
@@ -170,6 +207,43 @@ func parseDate(c *cli.Context, paramName string) time.Time {
 	return parsedDate
 }
 
+func prepareTLSConfig(dsn string, c *cli.Context) {
+	if strings.Contains(dsn, "tls_config") {
+		cfg, err := clickhouse.ParseDSN(dsn)
+		if err != nil {
+			log.Fatal().Stack().Err(errors.Wrap(err, "")).Send()
+		}
+		tlsConfig := &tls.Config{}
+		if c.String("tls-ca") != "" {
+			CA := x509.NewCertPool()
+			severCert, err := ioutil.ReadFile(c.String("tls-ca"))
+			if err != nil {
+				log.Fatal().Stack().Err(errors.Wrap(err, "")).
+					Str("tls-ca", c.String("tls-ca")).
+					Str("tls-certificate", c.String("tls-certificate")).
+					Str("tls-key", c.String("tls-key")).
+					Send()
+			}
+			CA.AppendCertsFromPEM(severCert)
+			tlsConfig.RootCAs = CA
+		}
+		if c.String("tls-certificate") != "" {
+			cert, err := tls.LoadX509KeyPair(c.String("tls-certificate"), c.String("tls-key"))
+			if err != nil {
+				log.Fatal().Stack().Err(errors.Wrap(err, "")).
+					Str("tls-ca", c.String("tls-ca")).
+					Str("tls-certificate", c.String("tls-certificate")).
+					Str("tls-key", c.String("tls-key")).
+					Send()
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+		if err := clickhouse.RegisterTLSConfig(cfg.TLSConfig, tlsConfig); err != nil {
+			log.Fatal().Stack().Err(errors.Wrap(err, "")).Send()
+		}
+	}
+}
+
 func generate(c *cli.Context) error {
 	queryFilter := c.String("query-filter")
 	queryIds := c.StringSlice("query-ids")
@@ -178,48 +252,57 @@ func generate(c *cli.Context) error {
 	dateFrom := parseDate(c, "date-from")
 	dateTo := parseDate(c, "date-to")
 
-	db, err := sql.Open("clickhouse", dsn)
-	if err != nil {
-		log.Fatal().Str("dsn", dsn).Err(err).Msg("Can't establishment ClickHouse connection")
-	} else {
-		log.Info().Str("dsn", dsn).Msg("connected to ClickHouse")
-	}
-	if _, err := db.Exec("SYSTEM FLUSH LOGS"); err != nil {
-		log.Fatal().Err(err).Stack().Msg("SYSTEM FLUSH LOGS failed")
-	}
-	if _, err := db.Exec("SET allow_introspection_functions=1"); err != nil {
-		log.Fatal().Err(err).Stack().Msg("SET allow_introspection_functions=1 failed")
-	}
-	// create output-dir if not exits
-	if _, err := os.Stat(c.String("output-dir")); os.IsNotExist(err) {
-		if err := os.MkdirAll(c.String("output-dir"), 0755); err != nil {
-			log.Fatal().Err(err).Str("output-dir", c.String("output-dir")).Msg("Failed create output-dir")
-		}
-	}
-	// queryId -> stackFile descriptor
+	prepareTLSConfig(dsn, c)
+
+	db := openDbConnection(dsn)
+	checkClickHouseVersion(c, db)
+	flushSystemLog(db)
+
+	createOutputDir(c)
+	// stackFiles format = outputDir/hostname/queryId.traceType.outExtension -> stackFile descriptor
 	stackFiles := make(map[string]*os.File, 256)
-	stackWhere := " trace_type IN (?) AND event_time >= ? AND event_time <= ?"
-	stackArgs := []interface{}{traceTypes, dateFrom, dateTo}
+	stackWhere := " trace_type IN ('" + strings.Join(traceTypes, "','") + "') AND event_time >= ? AND event_time <= ?"
+	stackArgs := []interface{}{dateFrom, dateTo}
 	stackWhere, stackArgs = applyQueryFilter(db, c, queryFilter, queryIds, dateFrom, dateTo, stackWhere, stackArgs)
-	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{"where": stackWhere})
+
+	var queryIdField string
+	if c.Bool("normalize-query") {
+		queryIdField = "toString(normalizedQueryHash(q.query)) AS query_id"
+	} else {
+		queryIdField = "t.query_id AS query_id"
+	}
+
+	var traceFrom string
+	if c.String("clickhouse-cluster") != "" {
+		traceFrom = "clusterAllReplicas('" + c.String("clickhouse-cluster") + "', system.trace_log) AS t"
+		traceFrom += " ANY LEFT JOIN clusterAllReplicas('" + c.String("clickhouse-cluster") + "', system.query_log) AS q"
+		traceFrom += " ON q.query_id=t.query_id"
+	} else {
+		traceFrom = "system.trace_log AS t ANY LEFT JOIN system.query_log AS q ON q.query_id=t.query_id"
+	}
+
+	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{
+		"where":        stackWhere,
+		"from":         traceFrom,
+		"queryIdField": queryIdField,
+	})
 	fetchQuery(db, stackSQL, stackArgs, func(r map[string]interface{}) error {
-		fetchStack := func(queryId, stack, traceType string, totalSize, samples uint64) {
-			if _, exists := stackFiles[queryId+"."+traceType]; !exists {
-				stackFile := queryId + "." + traceType
-				if c.String("output-format") == "json" {
-					stackFile += ".json"
-				} else {
-					stackFile += ".txt"
-				}
-				stackFile = filepath.Join(c.String("output-dir"), stackFile)
+		fetchStack := func(hostName, queryId, stack, traceType string, totalSize, samples uint64) {
+			stackFile := filepath.Join(c.String("output-dir"), hostName, queryId+"."+traceType)
+			if c.String("output-format") == "json" {
+				stackFile += ".json"
+			} else {
+				stackFile += ".txt"
+			}
+			if _, exists := stackFiles[stackFile]; !exists {
 				if f, err := os.Create(stackFile); err != nil {
-					log.Fatal().Err(err).Stack().Str("stackFile", stackFile).Send()
+					log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("stackFile", stackFile).Send()
 				} else {
-					stackFiles[queryId+"."+traceType] = f
+					stackFiles[stackFile] = f
 				}
 				if c.String("output-format") == "json" {
-					if _, err := stackFiles[queryId].WriteString("[\n"); err != nil {
-						log.Fatal().Err(err).Stack().Send()
+					if _, err := stackFiles[stackFile].WriteString("[\n"); err != nil {
+						log.Fatal().Stack().Err(errors.Wrap(err, "")).Send()
 					}
 				}
 			}
@@ -228,17 +311,18 @@ func generate(c *cli.Context) error {
 				outputFormat = " {\"stack\":\"%s\", \"Value\": %d},\n"
 			}
 			if strings.Contains(traceType, "Memory") {
-				if _, err := stackFiles[queryId+"."+traceType].WriteString(fmt.Sprintf(outputFormat, stack, totalSize)); err != nil {
-					log.Fatal().Err(err).Stack().Send()
+				if _, err := stackFiles[stackFile].WriteString(fmt.Sprintf(outputFormat, stack, totalSize)); err != nil {
+					log.Fatal().Stack().Err(errors.Wrap(err, "")).Send()
 				}
 			} else {
-				if _, err := stackFiles[queryId+"."+traceType].WriteString(fmt.Sprintf(outputFormat, stack, samples)); err != nil {
-					log.Fatal().Err(err).Stack().Send()
+				if _, err := stackFiles[stackFile].WriteString(fmt.Sprintf(outputFormat, stack, samples)); err != nil {
+					log.Fatal().Stack().Err(errors.Wrap(err, "")).Send()
 				}
 			}
 
 		}
 
+		hostName := r["host_name"].(string)
 		queryId := r["query_id"].(string)
 		stack := r["stack"].(string)
 		traceType := r["trace_type"].(string)
@@ -246,44 +330,102 @@ func generate(c *cli.Context) error {
 		samples := r["samples"].(uint64)
 
 		if queryId != "" {
-			fetchStack(queryId, stack, traceType, totalSize, samples)
+			fetchStack(hostName, queryId, stack, traceType, totalSize, samples)
 		}
-		fetchStack("global", stack, traceType, totalSize, samples)
+		fetchStack(hostName, "global", stack, traceType, totalSize, samples)
 		return nil
 	})
 
 	for stackKey, stackFile := range stackFiles {
-		stackKeys := strings.Split(stackKey, ".")
-		queryId := stackKeys[0]
-		traceType := stackKeys[1]
+		fileName := strings.Split(filepath.Base(stackKey), ".")
+		queryId := fileName[0]
+		traceType := fileName[1]
+
+		hostName := strings.Split(filepath.Dir(stackKey), string(filepath.Separator))[1]
+
 		if c.String("output-format") == "json" {
 			if _, err := stackFile.WriteString("{}]\n"); err != nil {
-				log.Fatal().Err(err).Stack().Send()
+				log.Fatal().Stack().Err(errors.Wrap(err, "")).Send()
 			}
 		}
 		if err := stackFile.Close(); err != nil {
 			log.Fatal().Err(err).Str("stackFile", stackFile.Name()).Send()
 		}
 		if c.String("output-format") == "txt" || c.String("output-format") == "svg" {
-			writeSVG(c, queryId, traceType, stackFile.Name())
+			writeSVG(c, hostName, queryId, traceType, stackFile.Name())
 		}
 	}
 	log.Info().Int("processedFiles", len(stackFiles)).Msg("done processing")
 	return nil
 }
 
+func createOutputDir(c *cli.Context) {
+	// create output-dir if not exits
+	if _, err := os.Stat(c.String("output-dir")); os.IsNotExist(err) {
+		if err := os.MkdirAll(c.String("output-dir"), 0755); err != nil {
+			log.Fatal().Err(err).Str("output-dir", c.String("output-dir")).Msg("Failed create output-dir")
+		}
+	}
+}
+
+func flushSystemLog(db *sql.DB) {
+	if _, err := db.Exec("SYSTEM FLUSH LOGS"); err != nil {
+		log.Fatal().Stack().Err(errors.Wrap(err, "")).Msg("SYSTEM FLUSH LOGS failed")
+	}
+}
+
+func checkClickHouseVersion(c *cli.Context, db *sql.DB) {
+	fetchQuery(db, "SELECT version() AS version", nil, func(r map[string]interface{}) error {
+		if r["version"].(string) < "20.6" && c.Bool("normalize-query") {
+			log.Fatal().Str("version", r["version"].(string)).Msg("normalize-query require ClickHouse server version 20.6+")
+		}
+		if r["version"].(string) < "20.5" {
+			log.Fatal().Str("version", r["version"].(string)).Msg("system.trace_log with trace_type require ClickHouse server version 20.5+")
+		}
+		return nil
+	})
+}
+
+func openDbConnection(dsn string) *sql.DB {
+	db, err := sql.Open("clickhouse", dsn)
+	if err != nil {
+		log.Fatal().Str("dsn", dsn).Err(err).Msg("Can't establishment ClickHouse connection")
+	} else {
+		log.Info().Str("dsn", dsn).Msg("connected to ClickHouse")
+	}
+	return db
+}
+
 func addWhereArgs(where, addWhere string, args []interface{}, addArg interface{}) (string, []interface{}) {
 	where += addWhere
-	args = append(args, addArg)
+	if addArg != nil {
+		args = append(args, addArg)
+	}
 	return where, args
 }
 
 func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds []string, dateFrom time.Time, dateTo time.Time, stackWhere string, stackArgs []interface{}) (string, []interface{}) {
 	var queryIdSQL string
-	var queryIdWhere string
+	var queryIdWhere, queryLogTable string
+	var queryField, queryIdField string
 	var queryIdArgs []interface{}
-	queryIdWhere = "type = 1 AND event_time >= ? AND event_time <= ?"
+
+	queryIdWhere = "event_time >= ? AND event_time <= ?"
 	queryIdArgs = []interface{}{dateFrom, dateTo}
+
+	if c.String("clickhouse-cluster") != "" {
+		queryLogTable = "clusterAllReplicas('" + c.String("clickhouse-cluster") + "', system.query_log) AS q"
+	} else {
+		queryLogTable = "system.query_log AS q"
+	}
+
+	if c.Bool("normalize-query") {
+		queryField = "normalizeQuery(q.query) AS query"
+		queryIdField = "toString(normalizedQueryHash(q.query)) AS query_id"
+	} else {
+		queryField = "q.query"
+		queryIdField = "q.query_id"
+	}
 
 	if queryFilter != "" {
 		if _, err := regexp.Compile(queryFilter); err != nil {
@@ -293,53 +435,57 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds [
 		stackWhere, stackArgs = addWhereArgs(stackWhere, " AND match(query, ?) ", stackArgs, queryFilter)
 	}
 	if len(queryIds) != 0 {
-		queryIdWhere, queryIdArgs = addWhereArgs(queryIdWhere, " AND query_id IN (?) ", queryIdArgs, queryIds)
-		stackWhere, stackArgs = addWhereArgs(stackWhere, " AND query_id IN (?) ", stackArgs, queryIds)
+		queryIdWhere, queryIdArgs = addWhereArgs(queryIdWhere, " AND query_id IN ('"+strings.Join(queryIds, "','")+"') ", queryIdArgs, nil)
+		stackWhere, stackArgs = addWhereArgs(stackWhere, " AND query_id IN ('"+strings.Join(queryIds, "','")+"') ", stackArgs, nil)
 	}
 
 	queryIdSQL = formatSQLTemplate(
 		queryIdSQLTemplate,
 		map[string]interface{}{
-			"where": queryIdWhere,
+			"where":        queryIdWhere,
+			"from":         queryLogTable,
+			"queryField":   queryField,
+			"queryIdField": queryIdField,
 		},
 	)
 
 	if queryIdSQL != "" {
+		sqlFiles := 0
 		fetchQuery(db, queryIdSQL, queryIdArgs, func(r map[string]interface{}) error {
-			queryId := r["query_id"].(string)
-			query := r["query"].(string)
-			sqlFile := filepath.Join(c.String("output-dir"), queryId+".sql")
-			if err := ioutil.WriteFile(sqlFile, []byte(query), 0644); err != nil {
-				log.Fatal().Err(err).Stack().Str("sqlFile", sqlFile).Send()
+			if err := os.MkdirAll(filepath.Join(c.String("output-dir"), r["host_name"].(string)), 0755); err != nil {
+				log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("sqlDir", filepath.Join(c.String("output-dir"), r["host_name"].(string))).Send()
 			}
-			queryIds = append(queryIds, queryId)
+			sqlFile := filepath.Join(c.String("output-dir"), r["host_name"].(string), r["query_id"].(string)+".sql")
+			if err := ioutil.WriteFile(sqlFile, []byte(r["query"].(string)), 0644); err != nil {
+				log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("sqlFile", sqlFile).Send()
+			}
+			sqlFiles++
 			return nil
 		})
-		log.Info().Int("len(queryIds)", len(queryIds)).Msg("write .sql files")
+		log.Info().Int("sqlFiles", sqlFiles).Msg("write .sql files")
 	}
 	return stackWhere, stackArgs
 }
 
 func findFlameGraphScript(c *cli.Context) string {
-	if script := c.String("flamegraph-script"); script != "" {
+	script := c.String("flamegraph-script")
+	if script != "" {
 		log.Debug().Msgf("set flamegraph-script: %s", script)
 		if _, err := os.Stat(script); err == nil {
 			return script
 		}
+
+		var err error
+		if script, err = exec.LookPath(script); err != nil {
+			log.Fatal().Msgf("%s is not found in $PATH", script)
+		}
 	}
-
-	if script, err := exec.LookPath("flamegraph.pl"); err == nil {
-		return script
-	}
-
-	log.Fatal().Msg("flamegraph.pl is not found in $PATH")
-
-	return ""
+	return script
 }
 
-func writeSVG(c *cli.Context, queryId, traceType string, stackName string) {
+func writeSVG(c *cli.Context, hostName, queryId, traceType, stackName string) {
 	// @TODO DEV/2h advanced title generation logic
-	title := fmt.Sprintf("Clickhouse queryId %s (%s) from %s to %s", queryId, traceType, c.String("date-from"), c.String("date-to"))
+	title := fmt.Sprintf("hostName %s queryId %s (%s) from %s to %s", hostName, queryId, traceType, c.String("date-from"), c.String("date-to"))
 	countName := "samples"
 	if strings.Contains(traceType, "Memory") {
 		countName = "bytes"
@@ -354,7 +500,7 @@ func writeSVG(c *cli.Context, queryId, traceType string, stackName string) {
 	}
 	stackFile, err := os.Open(stackName)
 	if err != nil {
-		log.Fatal().Stack().Err(err).Str("stackFile", stackName).Send()
+		log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("stackName", stackName).Send()
 	}
 	script := findFlameGraphScript(c)
 	log.Debug().Str("script", script).Strs("args", args).Send()
@@ -367,12 +513,12 @@ func writeSVG(c *cli.Context, queryId, traceType string, stackName string) {
 		log.Fatal().Msgf("writeSVG: failed to run script %s : %s", script, err)
 	}
 
-	fileName := filepath.Join(c.String("output-dir"), queryId+"."+traceType+".svg")
+	fileName := filepath.Join(c.String("output-dir"), hostName, queryId+"."+traceType+".svg")
 	if err := ioutil.WriteFile(fileName, svg, 0644); err != nil {
 		log.Fatal().Err(err).Str("fileName", fileName).Msg("can't write to svg")
 	}
 	if err := stackFile.Close(); err != nil {
-		log.Fatal().Err(err).Str("stackName", stackName).Stack().Send()
+		log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("stackName", stackName).Send()
 	}
 }
 
@@ -415,11 +561,7 @@ func fetchRowAsMap(rows *sql.Rows, cols []string) (m map[string]interface{}, err
 func fetchQuery(db *sql.DB, sql string, sqlArgs []interface{}, fetchCallback func(r map[string]interface{}) error) {
 	rows, err := db.Query(sql, sqlArgs...)
 	if err != nil {
-		if exception, isException := err.(*clickhouse.Exception); isException {
-			log.Fatal().Err(err).Int32("code", exception.Code).Str("message", exception.Message).Str("stacktrace", exception.StackTrace).Send()
-		} else {
-			log.Fatal().Err(err).Str("sql", sql).Str("sqlArgs", fmt.Sprintf("%v", sqlArgs)).Msg("query error")
-		}
+		log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("sql", sql).Str("sqlArgs", fmt.Sprintf("%v", sqlArgs)).Send()
 	} else {
 		log.Debug().Str("sql", sql).Str("sqlArgs", fmt.Sprintf("%v", sqlArgs)).Msg("query OK")
 	}
@@ -427,13 +569,13 @@ func fetchQuery(db *sql.DB, sql string, sqlArgs []interface{}, fetchCallback fun
 	for rows.Next() {
 		r, err := fetchRowAsMap(rows, cols)
 		if err != nil {
-			log.Fatal().Err(err).Msg("fetch error")
+			log.Fatal().Stack().Err(errors.Wrap(err, "")).Msg("fetch error")
 		}
 		if err := fetchCallback(r); err != nil {
-			log.Fatal().Err(err).Msg("fetch error")
+			log.Fatal().Stack().Err(errors.Wrap(err, "")).Msg("fetch error")
 		}
 	}
 	if err := rows.Close(); err != nil {
-		log.Fatal().Err(err).Interface("rows", rows).Stack().Send()
+		log.Fatal().Stack().Err(errors.Wrap(err, "")).Interface("rows", rows).Send()
 	}
 }

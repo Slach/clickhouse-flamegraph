@@ -1,0 +1,20 @@
+<yandex>
+    <https_port>8443</https_port>
+    <openSSL>
+    <server>
+        <!--
+        see gen_certs.sh
+        -->
+        <certificateFile>/etc/clickhouse-server/ssl/clickhouse.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/ssl/clickhouse-key.pem</privateKeyFile>
+        <!-- openssl dhparam -out /etc/clickhouse-server/ssl/dhparam.pem 4096 -->
+        <dhParamsFile>/etc/clickhouse-server/ssl/dhparam.pem</dhParamsFile>
+        <verificationMode>once</verificationMode>
+        <caConfig>/etc/clickhouse-server/ssl/ca-cert.pem</caConfig>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    </openSSL>
+</yandex>
