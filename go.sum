@@ -17,6 +17,8 @@ github.com/mailru/go-clickhouse v1.3.0 h1:KPtNyrSpOlx5Cfq2xoA2GN95kRA7V7xjXqXgR3
 github.com/mailru/go-clickhouse v1.3.0/go.mod h1:MRUTPjUvZIjSa0dop27y1HVKBTQ7kt27BD9TpIrgWjw=
 github.com/mailru/go-clickhouse v1.4.0 h1:Hts75D3KCBkFrbeWYmn2dRo9LggQC9oTjtxP8cNEhqk=
 github.com/mailru/go-clickhouse v1.4.0/go.mod h1:tkk8nOatzs1TK4BWZ6i5mmoQSh4VM24K2DmxLMkd1xo=
+github.com/mailru/go-clickhouse v1.5.0 h1:xonYP1jQvcfJi5TQ9DAoSOhsMkzSzQ35gIrRdJOYytg=
+github.com/mailru/go-clickhouse v1.5.0/go.mod h1:tkk8nOatzs1TK4BWZ6i5mmoQSh4VM24K2DmxLMkd1xo=
 github.com/mattn/go-runewidth v0.0.9/go.mod h1:H031xJmbD/WCDINGzjvQ9THkh0rPKHF+m2gUSrubnMI=
 github.com/mattn/go-runewidth v0.0.10/go.mod h1:RAqKPSqVFrSLVXbA8x7dzmKdmGzieGRCM46jaSJTDAk=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
