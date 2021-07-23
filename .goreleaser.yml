@@ -24,7 +24,8 @@ archives:
     files:
       - "README.md"
       - "LICENSE"
-      - "/usr/bin/flamegraph.pl"
+      - src: "/usr/bin/flamegraph.pl"
+        dst: "flamegraph.pl"
 nfpms:
   -
     id: clickhouse-flamegraph
@@ -45,7 +46,7 @@ nfpms:
     empty_folders:
       - /var/log/clickhouse-flamegraph
     contents:
-      - src: "/usr/bin/flamegraph.pl"
+      - src: "flamegraph.pl"
         dst: "/usr/bin/flamegraph.pl"
     overrides:
       rpm:
