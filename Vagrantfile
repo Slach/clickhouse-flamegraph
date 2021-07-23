@@ -26,6 +26,7 @@ Vagrant.configure(2) do |config|
 
   config.vm.provision "shell", inline: <<-SHELL
     set -xeuo pipefail
+    export DEBIAN_FRONTEND=noninteractive
     sysctl net.ipv6.conf.all.forwarding=1
     apt-get update
     apt-get install -y apt-transport-https ca-certificates software-properties-common curl
