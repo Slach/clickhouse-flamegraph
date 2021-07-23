@@ -57,14 +57,14 @@ func main() {
 		&cli.StringFlag{
 			Name:    "date-from",
 			Aliases: []string{"from"},
-			Usage:   "filter system.trace_log from date in any parsable format, see https://github.com/araddon/dateparse",
+			Usage:   "filter system.trace_log from date in any parsable format (see https://github.com/araddon/dateparse) or time duration (from current time)",
 			EnvVars: []string{"CH_FLAME_DATE_FROM"},
 			Value:   time.Now().Add(time.Duration(-5) * time.Minute).Format("2006-01-02 15:04:05 -0700"),
 		},
 		&cli.StringFlag{
 			Name:    "date-to",
 			Aliases: []string{"to"},
-			Usage:   "filter system.trace_log to date in any parsable format, see https://github.com/araddon/dateparse",
+			Usage:   "filter system.trace_log to date in any parsable format or time duration (see https://github.com/araddon/dateparse) or time duration (from current time)",
 			EnvVars: []string{"CH_FLAME_DATE_TO"},
 			Value:   time.Now().Format("2006-01-02 15:04:05 -0700"),
 		},
@@ -202,7 +202,11 @@ func parseDate(c *cli.Context, paramName string) time.Time {
 	var parsedDate time.Time
 	var err error
 	if parsedDate, err = dateparse.ParseAny(c.String(paramName)); err != nil {
-		log.Fatal().Err(err).Msgf("invalid %s parameter = %s", paramName, c.String(paramName))
+		if duration, err := time.ParseDuration(c.String(paramName)); err != nil {
+			log.Fatal().Err(err).Msgf("invalid %s parameter = %s", paramName, c.String(paramName))
+		} else {
+			parsedDate = time.Now().Add(-duration)
+		}
 	}
 	return parsedDate
 }
