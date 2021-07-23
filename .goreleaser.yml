@@ -44,8 +44,9 @@ nfpms:
     epoch: 1
     empty_folders:
       - /var/log/clickhouse-flamegraph
-    files:
-      "/usr/bin/flamegraph.pl": "/usr/bin/flamegraph.pl"
+    contents:
+      - src: "/usr/bin/flamegraph.pl"
+        dst: "/usr/bin/flamegraph.pl"
     overrides:
       rpm:
         replacements:

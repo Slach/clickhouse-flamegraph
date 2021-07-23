@@ -11,6 +11,7 @@ git config core.autocrlf input
 git config user.name "$GITHUB_LOGIN"
 git config user.email "$GITHUB_EMAIL"
 bump2version --verbose $1
+goreleaser check
 goreleaser
 bash -x ./docker/docker-publisher.sh
 git push origin master
