@@ -117,7 +117,7 @@ GLOBAL OPTIONS:
    --query-filter value, --query-regexp value   filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax [%CH_FLAME_QUERY_FILTER%]
    --query-ids value, --query-id value          filter system.query_log by query_id field, comma separated list [%CH_FLAME_QUERY_IDS%]
    --trace-types value, --trace-type value      filter system.trace_log by trace_type field, comma separated list (default: "Real", "CPU", "Memory", "MemorySample") [%CH_FLAME_TRACE_TYPES%]
-   --clickhouse-dsn value, --dsn value          clickhouse connection string, see https://github.com/mailru/go-clickhouse#dsn (default: "http://localhost:8123?database=default") [%CH_FLAME_CLICKHOUSE_DSN%]
+   --clickhouse-dsn value, --dsn value          clickhouse connection string, see https://github.com/mailru/go-clickhouse#dsn (default: "http://localhost:8123/default") [%CH_FLAME_CLICKHOUSE_DSN%]
    --clickhouse-cluster value, --cluster value  clickhouse cluster name from system.clusters, all flame graphs will get from cluster() function, see https://clickhouse.tech/docs/en/sql-reference/table-functions/cluster [%CH_FLAME_CLICKHOUSE_CLUSTER%]
    --tls-certificate value                      X509 *.cer, *.crt or *.pem file for https connection, use only if tls_config exists in --dsn, see https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details [%CH_FLAME_TLS_CERT%]
    --tls-key value                              X509 *.key file for https connection, use only if tls_config exists in --dsn [%CH_FLAME_TLS_KEY%]
