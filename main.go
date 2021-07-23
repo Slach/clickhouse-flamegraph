@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -374,12 +375,31 @@ func flushSystemLog(db *sql.DB) {
 	}
 }
 
+func parseClickhouseVersion(versionStr string) ([]int, error) {
+	split := strings.Split(versionStr, ".")
+	if len(split) < 2 {
+		return nil, fmt.Errorf("can't parse clickhouse version: '%s'", versionStr)
+	}
+	version := make([]int, len(split))
+	var err error
+	for i := range split {
+		if version[i], err = strconv.Atoi(split[i]); err != nil {
+			break
+		}
+	}
+	return version, err
+}
+
 func checkClickHouseVersion(c *cli.Context, db *sql.DB) {
 	fetchQuery(db, "SELECT version() AS version", nil, func(r map[string]interface{}) error {
-		if r["version"].(string) < "20.6" && c.Bool("normalize-query") {
+		version, err := parseClickhouseVersion(r["version"].(string))
+		if err != nil {
+			log.Fatal().Str("version", r["version"].(string)).Err(err)
+		}
+		if (version[0] == 20 && version[1] < 6) && c.Bool("normalize-query") {
 			log.Fatal().Str("version", r["version"].(string)).Msg("normalize-query require ClickHouse server version 20.6+")
 		}
-		if r["version"].(string) < "20.5" {
+		if version[0] < 20 || (version[0] == 20 && version[1] < 5) {
 			log.Fatal().Str("version", r["version"].(string)).Msg("system.trace_log with trace_type require ClickHouse server version 20.5+")
 		}
 		return nil
