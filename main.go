@@ -94,7 +94,7 @@ func main() {
 			Aliases: []string{"dsn"},
 			Usage:   "clickhouse connection string, see https://github.com/mailru/go-clickhouse#dsn",
 			EnvVars: []string{"CH_FLAME_CLICKHOUSE_DSN"},
-			Value:   "http://localhost:8123?database=default",
+			Value:   "http://localhost:8123/default",
 		},
 		&cli.StringFlag{
 			Name:    "clickhouse-cluster",
