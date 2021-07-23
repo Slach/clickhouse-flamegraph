@@ -24,8 +24,7 @@ archives:
     files:
       - "README.md"
       - "LICENSE"
-      - src: "/usr/bin/flamegraph.pl"
-        dst: "flamegraph.pl"
+      - "flamegraph.pl"
 nfpms:
   -
     id: clickhouse-flamegraph

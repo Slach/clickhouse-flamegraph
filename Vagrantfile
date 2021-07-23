@@ -69,6 +69,7 @@ Vagrant.configure(2) do |config|
     rm -rf /opt/flamegraph && mkdir -p /opt/flamegraph/
     git clone https://github.com/brendangregg/FlameGraph.git /opt/flamegraph/
     ln -vsf /opt/flamegraph/flamegraph.pl /usr/bin/flamegraph.pl
+    ln -vsf /opt/flamegraph/flamegraph.pl /vagrant/flamegraph.pl
 
     goreleaser_urls=$(curl -sL https://github.com/goreleaser/goreleaser/releases/latest | grep href | grep -E "amd64\\.deb|\\.txt" | cut -d '"' -f 2)
     echo "$goreleaser_urls" > /tmp/goreleaser_urls.txt

@@ -1,4 +1,5 @@
 .release_env
+flamegraph.pl
 .idea/
 .vagrant/
 flame-graphs/
