@@ -1,7 +1,7 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 Vagrant.configure(2) do |config|
-  config.vm.box = "ubuntu/focal64"
+  config.vm.box = "generic/ubuntu2004"
   config.vm.box_check_update = false
 
   if Vagrant.has_plugin?("vagrant-vbguest")
@@ -41,12 +41,12 @@ Vagrant.configure(2) do |config|
     add-apt-repository ppa:longsleep/golang-backports
     apt-get update
 
-    apt-get install -y golang-1.15
+    apt-get install -y golang-1.16
     export GOPATH=/home/ubuntu/go/
     grep -q -F 'export GOPATH=$GOPATH' /home/ubuntu/.bashrc  || echo "export GOPATH=$GOPATH" >> /home/ubuntu/.bashrc
     grep -q -F 'export GOPATH=$GOPATH' /home/vagrant/.bashrc || echo "export GOPATH=$GOPATH" >> /home/vagrant/.bashrc
     grep -q -F 'export GOPATH=$GOPATH' /root/.bashrc         || echo "export GOPATH=$GOPATH" >> /root/.bashrc
-    export GOROOT=/usr/lib/go-1.15/
+    export GOROOT=/usr/lib/go-1.16/
     grep -q -F 'export GOROOT=$GOROOT' /home/ubuntu/.bashrc  || echo "export GOROOT=$GOROOT" >> /home/ubuntu/.bashrc
     grep -q -F 'export GOROOT=$GOROOT' /home/vagrant/.bashrc || echo "export GOROOT=$GOROOT" >> /home/vagrant/.bashrc
     grep -q -F 'export GOROOT=$GOROOT' /root/.bashrc         || echo "export GOROOT=$GOROOT" >> /root/.bashrc
@@ -63,7 +63,7 @@ Vagrant.configure(2) do |config|
     pip3 install -U bump2version
     pip3 install -U docker-compose
     mkdir -p /home/ubuntu/go/src/github.com/Slach/
-    ln -nsfv /usr/lib/go-1.15/bin/go /usr/bin/go
+    ln -nsfv /usr/lib/go-1.16/bin/go /usr/bin/go
     ln -nsfv /vagrant /home/ubuntu/go/src/github.com/Slach/clickhouse-flamegraph
 
     rm -rf /opt/flamegraph && mkdir -p /opt/flamegraph/
