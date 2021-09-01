@@ -6,7 +6,7 @@ WORKDIR /go/src/github.com/Slach/clickhouse-flamegraph
 RUN go mod tidy
 RUN go build -o /usr/bin/clickhouse-flamegraph main.go
 
-FROM alpine:3.14
+FROM alpine:latest
 RUN apk --no-cache add bash tzdata git perl
 RUN git clone https://github.com/brendangregg/FlameGraph.git /opt/flamegraph/
 RUN ln -vsf /opt/flamegraph/flamegraph.pl /usr/bin/flamegraph.pl
