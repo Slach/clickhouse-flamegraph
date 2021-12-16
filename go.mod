@@ -9,9 +9,3 @@ require (
 	github.com/rs/zerolog v1.26.1
 	github.com/urfave/cli/v2 v2.3.0
 )
-
-require (
-	golang.org/x/crypto v0.0.0-20211215165025-cf75a172585e // indirect
-	golang.org/x/tools v0.1.8 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
-)

@@ -71,19 +71,9 @@ Vagrant.configure(2) do |config|
     ln -vsf /opt/flamegraph/flamegraph.pl /usr/bin/flamegraph.pl
     ln -vsf /opt/flamegraph/flamegraph.pl /vagrant/flamegraph.pl
 
-    goreleaser_urls=$(curl -sL https://github.com/goreleaser/goreleaser/releases/latest | grep href | grep -E "amd64\\.deb|\\.txt" | cut -d '"' -f 2)
-    echo "$goreleaser_urls" > /tmp/goreleaser_urls.txt
-    sed -i -e "s/^\\/goreleaser/https:\\/\\/github.com\\/goreleaser/" /tmp/goreleaser_urls.txt
-    wget -nv -c -i /tmp/goreleaser_urls.txt
-    grep amd64.deb goreleaser_checksums.txt | sha256sum
-    dpkg -i $(cat goreleaser*checksums.txt | grep amd64.deb | cut -d " " -f 2-)
-
-    nfpm_urls=$(curl -sL https://github.com/goreleaser/nfpm/releases/latest | grep href | grep -E "amd64\\.deb|\\.txt" | cut -d '"' -f 2)
-    echo "$nfpm_urls" > /tmp/nfpm_urls.txt
-    sed -i -e "s/^\\/goreleaser/https:\\/\\/github.com\\/goreleaser/" /tmp/nfpm_urls.txt
-    wget -nv -c -i /tmp/nfpm_urls.txt
-    grep amd64.deb nfpm*checksums.txt | sha256sum
-    dpkg -i $(cat nfpm*checksums.txt | grep amd64.deb | cut -d " " -f 2-)
+    echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | tee /etc/apt/sources.list.d/goreleaser.list
+    apt-get update
+    apt-get install -y goreleaser nfpm
 
     mkdir -p -m 0700 /root/.ssh/
     cp -fv /vagrant/id_rsa /root/.ssh/id_rsa
