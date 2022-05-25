@@ -42,11 +42,11 @@ nfpms:
       - perl
     bindir: /usr/bin
     epoch: 1
-    empty_folders:
-      - /var/log/clickhouse-flamegraph
     contents:
       - src: "flamegraph.pl"
         dst: "/usr/bin/flamegraph.pl"
+      - dst: /var/log/clickhouse-flamegraph
+        type: dir
     overrides:
       rpm:
         replacements:
