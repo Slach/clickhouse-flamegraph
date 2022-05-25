@@ -5,8 +5,7 @@ thanks https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194
 ![Output example](docs/clickhouse-flamegraph.png?raw=1 "example SVG")
 
 ### Prepare Clickhouse server
-- install `clickhouse-server` package version 20.6 or higher how described in [documentation](https://clickhouse.tech/docs/en/getting-started/install/)
-- install `clickhouse-common-static-dbg` package
+- install `clickhouse-server` package version 20.6 or higher how described in [documentation](https://clickhouse.com/docs/en/getting-started/install/)
 - enable query_log and sampling profiling in settings on each server in your cluster for example add following files:
 ####  create /etc/clickhouse-server/config.d/profiling.xml (need server restart to apply changes)
 ```xml
@@ -118,12 +117,12 @@ GLOBAL OPTIONS:
    --query-ids value, --query-id value          filter system.query_log by query_id field, comma separated list [%CH_FLAME_QUERY_IDS%]
    --trace-types value, --trace-type value      filter system.trace_log by trace_type field, comma separated list (default: "Real", "CPU", "Memory", "MemorySample") [%CH_FLAME_TRACE_TYPES%]
    --clickhouse-dsn value, --dsn value          clickhouse connection string, see https://github.com/mailru/go-clickhouse#dsn (default: "http://localhost:8123/default") [%CH_FLAME_CLICKHOUSE_DSN%]
-   --clickhouse-cluster value, --cluster value  clickhouse cluster name from system.clusters, all flame graphs will get from cluster() function, see https://clickhouse.tech/docs/en/sql-reference/table-functions/cluster [%CH_FLAME_CLICKHOUSE_CLUSTER%]
-   --tls-certificate value                      X509 *.cer, *.crt or *.pem file for https connection, use only if tls_config exists in --dsn, see https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details [%CH_FLAME_TLS_CERT%]
+   --clickhouse-cluster value, --cluster value  clickhouse cluster name from system.clusters, all flame graphs will get from cluster() function, see https://clickhouse.com/docs/en/sql-reference/table-functions/cluster [%CH_FLAME_CLICKHOUSE_CLUSTER%]
+   --tls-certificate value                      X509 *.cer, *.crt or *.pem file for https connection, use only if tls_config exists in --dsn, see https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details [%CH_FLAME_TLS_CERT%]
    --tls-key value                              X509 *.key file for https connection, use only if tls_config exists in --dsn [%CH_FLAME_TLS_KEY%]
-   --tls-ca value                               X509 *.cer, *.crt or *.pem file used with https connection for self-signed certificate, use only if tls_config exists in --dsn, see https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details [%CH_FLAME_TLS_CA%]
+   --tls-ca value                               X509 *.cer, *.crt or *.pem file used with https connection for self-signed certificate, use only if tls_config exists in --dsn, see https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details [%CH_FLAME_TLS_CA%]
    --output-format value, --format value        accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format,  (default: "svg") [%CH_FLAME_OUTPUT_FORMAT%]
-   --normalize-query, --normalize               group stack by normalized queries, instead of query_id, see https://clickhouse.tech/docs/en/sql-reference/functions/string-functions/#normalized-query (default: false) [%CH_FLAME_NORMALIZE_QUERY%]
+   --normalize-query, --normalize               group stack by normalized queries, instead of query_id, see https://clickhouse.com/docs/en/sql-reference/functions/string-functions/#normalized-query (default: false) [%CH_FLAME_NORMALIZE_QUERY%]
    --debug, --verbose                           show debug log (default: false) [%CH_FLAME_DEBUG%]
    --console                                    output logs to console format instead of json (default: false) [%CH_FLAME_LOG_TO_CONSOLE%]
    --help, -h                                   show help (default: false)

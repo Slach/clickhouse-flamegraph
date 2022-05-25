@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
-	"github.com/mailru/go-clickhouse"
+	"github.com/mailru/go-clickhouse/v2"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -100,13 +100,13 @@ func main() {
 		&cli.StringFlag{
 			Name:    "clickhouse-cluster",
 			Aliases: []string{"cluster"},
-			Usage:   "clickhouse cluster name from system.clusters, all flame graphs will get from cluster() function, see https://clickhouse.tech/docs/en/sql-reference/table-functions/cluster",
+			Usage:   "clickhouse cluster name from system.clusters, all flame graphs will get from cluster() function, see https://clickhouse.com/docs/en/sql-reference/table-functions/cluster",
 			EnvVars: []string{"CH_FLAME_CLICKHOUSE_CLUSTER"},
 			Value:   "",
 		},
 		&cli.StringFlag{
 			Name:    "tls-certificate",
-			Usage:   "X509 *.cer, *.crt or *.pem file for https connection, use only if tls_config exists in --dsn, see https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
+			Usage:   "X509 *.cer, *.crt or *.pem file for https connection, use only if tls_config exists in --dsn, see https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
 			EnvVars: []string{"CH_FLAME_TLS_CERT"},
 			Value:   "",
 		},
@@ -118,7 +118,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "tls-ca",
-			Usage:   "X509 *.cer, *.crt or *.pem file used with https connection for self-signed certificate, use only if tls_config exists in --dsn, see https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
+			Usage:   "X509 *.cer, *.crt or *.pem file used with https connection for self-signed certificate, use only if tls_config exists in --dsn, see https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
 			EnvVars: []string{"CH_FLAME_TLS_CA"},
 			Value:   "",
 		},
@@ -132,7 +132,7 @@ func main() {
 		&cli.BoolFlag{
 			Name:    "normalize-query",
 			Aliases: []string{"normalize"},
-			Usage:   "group stack by normalized queries, instead of query_id, see https://clickhouse.tech/docs/en/sql-reference/functions/string-functions/#normalized-query",
+			Usage:   "group stack by normalized queries, instead of query_id, see https://clickhouse.com/docs/en/sql-reference/functions/string-functions/#normalized-query",
 			EnvVars: []string{"CH_FLAME_NORMALIZE_QUERY"},
 		},
 		&cli.BoolFlag{
@@ -411,7 +411,7 @@ func checkClickHouseVersion(c *cli.Context, db *sql.DB) {
 }
 
 func openDbConnection(dsn string) *sql.DB {
-	db, err := sql.Open("clickhouse", dsn)
+	db, err := sql.Open("chhttp", dsn)
 	if err != nil {
 		log.Fatal().Str("dsn", dsn).Err(err).Msg("Can't establishment ClickHouse connection")
 	} else {
