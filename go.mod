@@ -7,7 +7,7 @@ require (
 	github.com/mailru/go-clickhouse/v2 v2.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.27.0
-	github.com/urfave/cli/v2 v2.11.1
+	github.com/urfave/cli/v2 v2.11.2
 )
 
 require (
