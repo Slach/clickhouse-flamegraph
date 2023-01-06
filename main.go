@@ -274,7 +274,7 @@ func generate(c *cli.Context) error {
 	if c.Bool("normalize-query") {
 		queryIdField = "toString(normalizedQueryHash(q.query)) AS query_id"
 	} else {
-		queryIdField = "t.query_id AS query_id"
+		queryIdField = "replaceAll(t.query_id,':','_') AS query_id"
 	}
 
 	var traceFrom string
@@ -557,7 +557,7 @@ func formatSQLTemplate(sqlTemplate string, context map[string]interface{}) strin
 	return strings.NewReplacer(args...).Replace(sqlTemplate)
 }
 
-//fetchRowAsMap see https://kylewbanks.com/blog/query-result-to-map-in-golang
+// fetchRowAsMap see https://kylewbanks.com/blog/query-result-to-map-in-golang
 func fetchRowAsMap(rows *sql.Rows, cols []string) (m map[string]interface{}, err error) {
 	// Create a slice of interface{}'s to represent each column,
 	// and a second slice to contain pointers to each item in the columns slice.

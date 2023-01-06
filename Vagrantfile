@@ -41,12 +41,12 @@ Vagrant.configure(2) do |config|
     add-apt-repository ppa:longsleep/golang-backports
     apt-get update
 
-    apt-get install -y golang-1.17
+    apt-get install -y golang-1.19
     export GOPATH=/home/ubuntu/go/
     grep -q -F 'export GOPATH=$GOPATH' /home/ubuntu/.bashrc  || echo "export GOPATH=$GOPATH" >> /home/ubuntu/.bashrc
     grep -q -F 'export GOPATH=$GOPATH' /home/vagrant/.bashrc || echo "export GOPATH=$GOPATH" >> /home/vagrant/.bashrc
     grep -q -F 'export GOPATH=$GOPATH' /root/.bashrc         || echo "export GOPATH=$GOPATH" >> /root/.bashrc
-    export GOROOT=/usr/lib/go-1.17/
+    export GOROOT=/usr/lib/go-1.19/
     grep -q -F 'export GOROOT=$GOROOT' /home/ubuntu/.bashrc  || echo "export GOROOT=$GOROOT" >> /home/ubuntu/.bashrc
     grep -q -F 'export GOROOT=$GOROOT' /home/vagrant/.bashrc || echo "export GOROOT=$GOROOT" >> /home/vagrant/.bashrc
     grep -q -F 'export GOROOT=$GOROOT' /root/.bashrc         || echo "export GOROOT=$GOROOT" >> /root/.bashrc
