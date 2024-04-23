@@ -1,4 +1,10 @@
 <yandex>
+    <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+    <!-- fill system.trace_log for 10 times per second for CPU time -->
+    <global_profiler_cpu_time_period_ns>100000000</global_profiler_cpu_time_period_ns>
+    <!-- fill system.trace_log for 1 times per second for Real time, it produces too much data now -->
+    <global_profiler_real_time_period_ns>1000000000</global_profiler_real_time_period_ns>
+
     <!-- Simple server-wide memory profiler. Collect a stack trace at every peak allocation step (in bytes).
          Data will be stored in system.trace_log table with query_id = empty string.
          Zero means disabled. Minimal effective value is 4 MiB.
