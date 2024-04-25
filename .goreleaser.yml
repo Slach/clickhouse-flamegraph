@@ -25,8 +25,7 @@ archives:
       - "LICENSE"
       - "flamegraph.pl"
 nfpms:
-  -
-    id: clickhouse-flamegraph
+  - id: clickhouse-flamegraph
     file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     builds:
       - clickhouse-flamegraph
@@ -46,11 +45,6 @@ nfpms:
         dst: "/usr/bin/flamegraph.pl"
       - dst: /var/log/clickhouse-flamegraph
         type: dir
-    overrides:
-      rpm:
-        replacements:
-          amd64: x86_64
-        file_name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Arch }}"
 release:
   github:
     owner: Slach
