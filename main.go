@@ -199,17 +199,17 @@ func run(c *cli.Context) error {
 	return generate(c)
 }
 
-func parseDate(c *cli.Context, paramName string) time.Time {
+func parseDate(c *cli.Context, dateValue string, serverTimezone *time.Location) time.Time {
 	var parsedDate time.Time
 	var err error
-	if parsedDate, err = dateparse.ParseAny(c.String(paramName)); err != nil {
-		if duration, err := time.ParseDuration(c.String(paramName)); err != nil {
-			log.Fatal().Err(err).Msgf("invalid %s parameter = %s", paramName, c.String(paramName))
+	if parsedDate, err = dateparse.ParseAny(c.String(dateValue)); err != nil {
+		if duration, err := time.ParseDuration(c.String(dateValue)); err != nil {
+			log.Fatal().Err(err).Msgf("invalid %s parameter = %s", dateValue, c.String(dateValue))
 		} else {
 			parsedDate = time.Now().Add(-duration)
 		}
 	}
-	return parsedDate
+	return parsedDate.In(serverTimezone)
 }
 
 func prepareTLSConfig(dsn string, c *cli.Context) {
@@ -254,13 +254,14 @@ func generate(c *cli.Context) error {
 	queryIds := c.StringSlice("query-ids")
 	traceTypes := c.StringSlice("trace-types")
 	dsn := c.String("dsn")
-	dateFrom := parseDate(c, "date-from")
-	dateTo := parseDate(c, "date-to")
 
 	prepareTLSConfig(dsn, c)
 
 	db := openDbConnection(dsn)
 	checkClickHouseVersion(c, db)
+	serverTimeZone := getServerTimeZone(db)
+	dateFrom := parseDate(c, "date-from", serverTimeZone)
+	dateTo := parseDate(c, "date-to", serverTimeZone)
 	flushSystemLog(db)
 
 	createOutputDir(c)
@@ -345,8 +346,13 @@ func generate(c *cli.Context) error {
 		fileName := strings.Split(filepath.Base(stackKey), ".")
 		queryId := fileName[0]
 		traceType := fileName[1]
-
-		hostName := strings.Split(filepath.Dir(stackKey), string(filepath.Separator))[1]
+		pathItems := strings.Split(filepath.Dir(stackKey), string(filepath.Separator))
+		hostName := ""
+		if len(pathItems) > 2 {
+			hostName = strings.Split(filepath.Dir(stackKey), string(filepath.Separator))[1]
+		} else {
+			hostName = strings.Split(filepath.Dir(stackKey), string(filepath.Separator))[0]
+		}
 
 		if c.String("output-format") == "json" {
 			if _, err := stackFile.WriteString("{}]\n"); err != nil {
@@ -410,6 +416,18 @@ func checkClickHouseVersion(c *cli.Context, db *sql.DB) {
 	})
 }
 
+func getServerTimeZone(db *sql.DB) *time.Location {
+	var serverTimeZone *time.Location
+	var err error
+	fetchQuery(db, "SELECT timezone() AS timezone", nil, func(r map[string]interface{}) error {
+		serverTimeZone, err = time.LoadLocation(r["timezone"].(string))
+		if err != nil {
+			log.Fatal().Str("location", r["timezone"].(string)).Msg("Unknown clickhouse timezone")
+		}
+		return nil
+	})
+	return serverTimeZone
+}
 func openDbConnection(dsn string) *sql.DB {
 	db, err := sql.Open("chhttp", dsn)
 	if err != nil {
