@@ -130,7 +130,7 @@ GLOBAL OPTIONS:
 - When you can't change `/etc/clickhouse-server/*.xml` files on server, just add ` SETTINGS query_profiler_real_time_period_ns=40000000, query_profiler_cpu_time_period_ns=40000000` to end of your SQL query.
   And run following command
 ```
-clickhouse-flamegraph --dsn=tcp://clickhouse-server:9000/?pool_size=1 
+clickhouse-flamegraph --dsn=http://clickhouse-server:8123/?allow_introspection_functions=1
 ```
 
 - For check all settings in server set properly run following SQL query on your ClickHouse server 
