@@ -5,6 +5,6 @@ docker login -u ${DOCKER_LOGIN} -p ${DOCKER_PASSWORD} docker.io
 set -x
 
 set -xeuo pipefail
-docker-compose build clickhouse-flamegraph
+docker-compose build --pull clickhouse-flamegraph
 docker-compose push clickhouse-flamegraph
 echo "docker publishing done"
