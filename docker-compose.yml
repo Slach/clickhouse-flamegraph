@@ -1,4 +1,3 @@
-version: '2'
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -7,13 +6,12 @@ services:
      - ./docker/clickhouse/tls.xml:/etc/clickhouse-server/config.d/tls.xml
      - ./docker/clickhouse/ssl/:/etc/clickhouse-server/ssl/
     ports:
-     - 8123:8123
-     - 8443:8443
+     - "8123:8123"
+     - "8443:8443"
   clickhouse-flamegraph:
     image: clickhousepro/clickhouse-flamegraph
     volumes:
       - ./:/go/src/github.com/Slach/clickhouse-flamegraph
-      - /tmp/:/tmp/
     build:
       context: .
       dockerfile: docker/clickhouse-flamegraph/Dockerfile

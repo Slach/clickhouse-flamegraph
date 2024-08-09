@@ -3,3 +3,5 @@
 .vagrant/
 flame-graphs/
 dist/
+docs/
+docker/clickhouse/
