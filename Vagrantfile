@@ -63,7 +63,7 @@ Vagrant.configure(2) do |config|
     pip3 install -U bump2version
     pip3 install -U docker-compose
     mkdir -p /home/ubuntu/go/src/github.com/Slach/
-    ln -nsfv /usr/lib/go-1.16/bin/go /usr/bin/go
+    ln -nsfv /usr/lib/go-1.22/bin/go /usr/bin/go
     ln -nsfv /vagrant /home/ubuntu/go/src/github.com/Slach/clickhouse-flamegraph
 
     rm -rf /opt/flamegraph && mkdir -p /opt/flamegraph/

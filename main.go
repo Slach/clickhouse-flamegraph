@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	stdlog "log"
 	"os"
 	"os/exec"
@@ -221,7 +220,7 @@ func prepareTLSConfig(dsn string, c *cli.Context) {
 		tlsConfig := &tls.Config{}
 		if c.String("tls-ca") != "" {
 			CA := x509.NewCertPool()
-			severCert, err := ioutil.ReadFile(c.String("tls-ca"))
+			severCert, err := os.ReadFile(c.String("tls-ca"))
 			if err != nil {
 				log.Fatal().Stack().Err(errors.Wrap(err, "")).
 					Str("tls-ca", c.String("tls-ca")).
@@ -281,16 +280,20 @@ func generate(c *cli.Context) error {
 	var traceFrom string
 	if c.String("clickhouse-cluster") != "" {
 		traceFrom = "clusterAllReplicas('" + c.String("clickhouse-cluster") + "', system.trace_log) AS t"
-		traceFrom += " ANY LEFT JOIN clusterAllReplicas('" + c.String("clickhouse-cluster") + "', system.query_log) AS q"
+		traceFrom += " ANY LEFT JOIN (SELECT query_id, query, '" + traceTypes[0] + "' AS trace_type FROM clusterAllReplicas('" + c.String("clickhouse-cluster") + "', system.query_log) WHERE {where}) AS q"
 		traceFrom += " ON q.query_id=t.query_id"
 	} else {
-		traceFrom = "system.trace_log AS t ANY LEFT JOIN system.query_log AS q ON q.query_id=t.query_id"
+		traceFrom = "system.trace_log AS t ANY LEFT JOIN (SELECT query_id, query, '" + traceTypes[0] + "' AS trace_type FROM system.query_log WHERE {where} ) AS q ON q.query_id=t.query_id"
 	}
 
 	stackSQL := formatSQLTemplate(traceSQLTemplate, map[string]interface{}{
 		"where":        stackWhere,
 		"from":         traceFrom,
 		"queryIdField": queryIdField,
+	})
+	stackArgs = append(stackArgs, stackArgs...)
+	stackSQL = formatSQLTemplate(stackSQL, map[string]interface{}{
+		"where": stackWhere,
 	})
 	fetchQuery(db, stackSQL, stackArgs, func(r map[string]interface{}) error {
 		fetchStack := func(hostName, queryId, stack, traceType string, totalSize, samples uint64) {
@@ -348,7 +351,7 @@ func generate(c *cli.Context) error {
 		traceType := fileName[1]
 		pathItems := strings.Split(filepath.Dir(stackKey), string(filepath.Separator))
 		hostName := ""
-		if len(pathItems) > 2 {
+		if len(pathItems) > 1 {
 			hostName = strings.Split(filepath.Dir(stackKey), string(filepath.Separator))[1]
 		} else {
 			hostName = strings.Split(filepath.Dir(stackKey), string(filepath.Separator))[0]
@@ -360,9 +363,9 @@ func generate(c *cli.Context) error {
 			}
 		}
 		if err := stackFile.Close(); err != nil {
-			log.Fatal().Err(err).Str("stackFile", stackFile.Name()).Send()
+			log.Fatal().Stack().Err(err).Str("stackFile", stackFile.Name()).Send()
 		}
-		if c.String("output-format") == "txt" || c.String("output-format") == "svg" {
+		if c.String("output-format") == "svg" {
 			writeSVG(c, hostName, queryId, traceType, stackFile.Name())
 		}
 	}
@@ -498,7 +501,7 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds [
 				log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("sqlDir", filepath.Join(c.String("output-dir"), r["host_name"].(string))).Send()
 			}
 			sqlFile := filepath.Join(c.String("output-dir"), r["host_name"].(string), r["query_id"].(string)+".sql")
-			if err := ioutil.WriteFile(sqlFile, []byte(r["query"].(string)), 0644); err != nil {
+			if err := os.WriteFile(sqlFile, []byte(r["query"].(string)), 0644); err != nil {
 				log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("sqlFile", sqlFile).Send()
 			}
 			sqlFiles++
@@ -526,7 +529,6 @@ func findFlameGraphScript(c *cli.Context) string {
 }
 
 func writeSVG(c *cli.Context, hostName, queryId, traceType, stackName string) {
-	// @TODO DEV/2h advanced title generation logic
 	title := fmt.Sprintf("hostName %s queryId %s (%s) from %s to %s", hostName, queryId, traceType, c.String("date-from"), c.String("date-to"))
 	countName := "samples"
 	if strings.Contains(traceType, "Memory") {
@@ -545,7 +547,7 @@ func writeSVG(c *cli.Context, hostName, queryId, traceType, stackName string) {
 		log.Fatal().Stack().Err(errors.Wrap(err, "")).Str("stackName", stackName).Send()
 	}
 	script := findFlameGraphScript(c)
-	log.Debug().Str("script", script).Strs("args", args).Send()
+	log.Debug().Str("script", script).Str("stdin", stackFile.Name()).Strs("args", args).Send()
 	cmd := exec.Command(script, args...)
 	cmd.Stdin = stackFile
 	cmd.Stderr = os.Stderr
@@ -556,7 +558,7 @@ func writeSVG(c *cli.Context, hostName, queryId, traceType, stackName string) {
 	}
 
 	fileName := filepath.Join(c.String("output-dir"), hostName, queryId+"."+traceType+".svg")
-	if err := ioutil.WriteFile(fileName, svg, 0644); err != nil {
+	if err := os.WriteFile(fileName, svg, 0644); err != nil {
 		log.Fatal().Err(err).Str("fileName", fileName).Msg("can't write to svg")
 	}
 	if err := stackFile.Close(); err != nil {
