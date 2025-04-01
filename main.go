@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -20,17 +21,17 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/rs/zerolog/pkgerrors"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 func main() {
-	app := cli.NewApp()
-	app.Name = "clickhouse-flamegraph"
-	app.Usage = "visualize clickhouse system.trace_log as flamegraph, based on https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194"
-	app.ArgsUsage = ""
-	app.HideHelp = false
-	app.Version = "2024.1.2"
-	app.Flags = []cli.Flag{
+	cmd := cli.Command{}
+	cmd.Name = "clickhouse-flamegraph"
+	cmd.Usage = "visualize clickhouse system.trace_log as flamegraph, based on https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194"
+	cmd.ArgsUsage = ""
+	cmd.HideHelp = false
+	cmd.Version = "2024.1.2"
+	cmd.Flags = []cli.Flag{
 		&cli.IntFlag{
 			Name:  "width",
 			Value: 1200,
@@ -43,7 +44,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "flamegraph-script",
-			EnvVars: []string{"CH_FLAME_FLAMEGRAPH_SCRIPT"},
+			Sources: cli.EnvVars("CH_FLAME_FLAMEGRAPH_SCRIPT"),
 			Value:   "flamegraph.pl",
 			Usage:   "path to script which run SVG flamegraph generation, can be passed without full path, will try to find the script from $PATH",
 		},
@@ -51,104 +52,103 @@ func main() {
 			Name:    "output-dir",
 			Aliases: []string{"o"},
 			Value:   "./clickhouse-flamegraphs/",
-			EnvVars: []string{"CH_FLAME_OUTPUT_DIR"},
+			Sources: cli.EnvVars("CH_FLAME_OUTPUT_DIR"),
 			Usage:   "destination path of generated flamegraphs files",
 		},
 		&cli.StringFlag{
 			Name:    "date-from",
 			Aliases: []string{"from"},
 			Usage:   "filter system.trace_log from date in any parsable format (see https://github.com/araddon/dateparse) or time duration (from current time)",
-			EnvVars: []string{"CH_FLAME_DATE_FROM"},
+			Sources: cli.EnvVars("CH_FLAME_DATE_FROM"),
 			Value:   time.Now().Add(time.Duration(-5) * time.Minute).Format("2006-01-02 15:04:05 -0700"),
 		},
 		&cli.StringFlag{
 			Name:    "date-to",
 			Aliases: []string{"to"},
 			Usage:   "filter system.trace_log to date in any parsable format or time duration (see https://github.com/araddon/dateparse) or time duration (from current time)",
-			EnvVars: []string{"CH_FLAME_DATE_TO"},
+			Sources: cli.EnvVars("CH_FLAME_DATE_TO"),
 			Value:   time.Now().Format("2006-01-02 15:04:05 -0700"),
 		},
 		&cli.StringFlag{
 			Name:    "query-filter",
 			Aliases: []string{"query-regexp"},
 			Usage:   "filter system.query_log by any regexp, see https://github.com/google/re2/wiki/Syntax",
-			EnvVars: []string{"CH_FLAME_QUERY_FILTER"},
+			Sources: cli.EnvVars("CH_FLAME_QUERY_FILTER"),
 			Value:   "",
 		},
 		&cli.StringSliceFlag{
 			Name:    "query-ids",
 			Aliases: []string{"query-id"},
 			Usage:   "filter system.query_log by query_id field, comma separated list",
-			EnvVars: []string{"CH_FLAME_QUERY_IDS"},
-			Value:   cli.NewStringSlice(),
+			Sources: cli.EnvVars("CH_FLAME_QUERY_IDS"),
 		},
 		&cli.StringSliceFlag{
 			Name:    "trace-types",
 			Aliases: []string{"trace-type"},
 			Usage:   "filter system.trace_log by trace_type field, comma separated list",
-			EnvVars: []string{"CH_FLAME_TRACE_TYPES"},
-			Value:   cli.NewStringSlice("Real", "CPU", "Memory", "MemorySample"),
+			Sources: cli.EnvVars("CH_FLAME_TRACE_TYPES"),
+			Value:   []string{"Real", "CPU", "Memory", "MemorySample"},
 		},
 		&cli.StringFlag{
 			Name:    "clickhouse-dsn",
 			Aliases: []string{"dsn"},
 			Usage:   "clickhouse connection string, see https://github.com/mailru/go-clickhouse#dsn",
-			EnvVars: []string{"CH_FLAME_CLICKHOUSE_DSN"},
+			Sources: cli.EnvVars("CH_FLAME_CLICKHOUSE_DSN"),
 			Value:   "http://localhost:8123/default",
 		},
 		&cli.StringFlag{
 			Name:    "clickhouse-cluster",
 			Aliases: []string{"cluster"},
 			Usage:   "clickhouse cluster name from system.clusters, all flame graphs will get from cluster() function, see https://clickhouse.com/docs/en/sql-reference/table-functions/cluster",
-			EnvVars: []string{"CH_FLAME_CLICKHOUSE_CLUSTER"},
+			Sources: cli.EnvVars("CH_FLAME_CLICKHOUSE_CLUSTER"),
 			Value:   "",
 		},
 		&cli.StringFlag{
 			Name:    "tls-certificate",
 			Usage:   "X509 *.cer, *.crt or *.pem file for https connection, use only if tls_config exists in --dsn, see https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
-			EnvVars: []string{"CH_FLAME_TLS_CERT"},
+			Sources: cli.EnvVars("CH_FLAME_TLS_CERT"),
 			Value:   "",
 		},
 		&cli.StringFlag{
 			Name:    "tls-key",
 			Usage:   "X509 *.key file for https connection, use only if tls_config exists in --dsn",
-			EnvVars: []string{"CH_FLAME_TLS_KEY"},
+			Sources: cli.EnvVars("CH_FLAME_TLS_KEY"),
 			Value:   "",
 		},
 		&cli.StringFlag{
 			Name:    "tls-ca",
 			Usage:   "X509 *.cer, *.crt or *.pem file used with https connection for self-signed certificate, use only if tls_config exists in --dsn, see https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-openssl for details",
-			EnvVars: []string{"CH_FLAME_TLS_CA"},
+			Sources: cli.EnvVars("CH_FLAME_TLS_CA"),
 			Value:   "",
 		},
 		&cli.StringFlag{
 			Name:    "output-format",
 			Aliases: []string{"format"},
 			Usage:   "accept values: svg, txt (see https://github.com/brendangregg/FlameGraph#2-fold-stacks), json (see https://github.com/spiermar/d3-flame-graph/#input-format, ",
-			EnvVars: []string{"CH_FLAME_OUTPUT_FORMAT"},
+			Sources: cli.EnvVars("CH_FLAME_OUTPUT_FORMAT"),
 			Value:   "svg",
 		},
 		&cli.BoolFlag{
 			Name:    "normalize-query",
 			Aliases: []string{"normalize"},
 			Usage:   "group stack by normalized queries, instead of query_id, see https://clickhouse.com/docs/en/sql-reference/functions/string-functions/#normalized-query",
-			EnvVars: []string{"CH_FLAME_NORMALIZE_QUERY"},
+			Sources: cli.EnvVars("CH_FLAME_NORMALIZE_QUERY"),
 		},
 		&cli.BoolFlag{
 			Name:    "debug",
 			Aliases: []string{"verbose"},
 			Usage:   "show debug log",
-			EnvVars: []string{"CH_FLAME_DEBUG"},
+			Sources: cli.EnvVars("CH_FLAME_DEBUG"),
 		},
 		&cli.BoolFlag{
 			Name:    "console",
 			Usage:   "output logs to console format instead of json",
-			EnvVars: []string{"CH_FLAME_LOG_TO_CONSOLE"},
+			Sources: cli.EnvVars("CH_FLAME_LOG_TO_CONSOLE"),
 		},
 	}
 
-	app.Action = run
-	if err := app.Run(os.Args); err != nil {
+	cmd.Action = run
+	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal().Err(err).Msg("generation failed")
 	}
 }
@@ -182,7 +182,7 @@ SETTINGS allow_introspection_functions=1
 `
 )
 
-func run(c *cli.Context) error {
+func run(_ context.Context, c *cli.Command) error {
 	stdlog.SetOutput(log.Logger)
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 	if c.Bool("verbose") {
@@ -198,7 +198,7 @@ func run(c *cli.Context) error {
 	return generate(c)
 }
 
-func parseDate(c *cli.Context, dateValue string, serverTimezone *time.Location) time.Time {
+func parseDate(c *cli.Command, dateValue string, serverTimezone *time.Location) time.Time {
 	var parsedDate time.Time
 	var err error
 	if parsedDate, err = dateparse.ParseAny(c.String(dateValue)); err != nil {
@@ -211,7 +211,7 @@ func parseDate(c *cli.Context, dateValue string, serverTimezone *time.Location) 
 	return parsedDate.In(serverTimezone)
 }
 
-func prepareTLSConfig(dsn string, c *cli.Context) {
+func prepareTLSConfig(dsn string, c *cli.Command) {
 	if strings.Contains(dsn, "tls_config") {
 		cfg, err := clickhouse.ParseDSN(dsn)
 		if err != nil {
@@ -248,10 +248,13 @@ func prepareTLSConfig(dsn string, c *cli.Context) {
 	}
 }
 
-func generate(c *cli.Context) error {
+func generate(c *cli.Command) error {
 	queryFilter := c.String("query-filter")
 	queryIds := c.StringSlice("query-ids")
 	traceTypes := c.StringSlice("trace-types")
+	if len(traceTypes) == 0 {
+		traceTypes = []string{"Real", "CPU", "Memory", "MemorySample"}
+	}
 	dsn := c.String("dsn")
 
 	prepareTLSConfig(dsn, c)
@@ -373,7 +376,7 @@ func generate(c *cli.Context) error {
 	return nil
 }
 
-func createOutputDir(c *cli.Context) {
+func createOutputDir(c *cli.Command) {
 	// create output-dir if not exits
 	if _, err := os.Stat(c.String("output-dir")); os.IsNotExist(err) {
 		if err := os.MkdirAll(c.String("output-dir"), 0755); err != nil {
@@ -403,7 +406,7 @@ func parseClickhouseVersion(versionStr string) ([]int, error) {
 	return version, err
 }
 
-func checkClickHouseVersion(c *cli.Context, db *sql.DB) {
+func checkClickHouseVersion(c *cli.Command, db *sql.DB) {
 	fetchQuery(db, "SELECT version() AS version", nil, func(r map[string]interface{}) error {
 		version, err := parseClickhouseVersion(r["version"].(string))
 		if err != nil {
@@ -449,7 +452,7 @@ func addWhereArgs(where, addWhere string, args []interface{}, addArg interface{}
 	return where, args
 }
 
-func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds []string, dateFrom time.Time, dateTo time.Time, stackWhere string, stackArgs []interface{}) (string, []interface{}) {
+func applyQueryFilter(db *sql.DB, c *cli.Command, queryFilter string, queryIds []string, dateFrom time.Time, dateTo time.Time, stackWhere string, stackArgs []interface{}) (string, []interface{}) {
 	var queryIdSQL string
 	var queryIdWhere, queryLogTable string
 	var queryField, queryIdField string
@@ -512,7 +515,7 @@ func applyQueryFilter(db *sql.DB, c *cli.Context, queryFilter string, queryIds [
 	return stackWhere, stackArgs
 }
 
-func findFlameGraphScript(c *cli.Context) string {
+func findFlameGraphScript(c *cli.Command) string {
 	script := c.String("flamegraph-script")
 	if script != "" {
 		log.Debug().Msgf("set flamegraph-script: %s", script)
@@ -528,7 +531,7 @@ func findFlameGraphScript(c *cli.Context) string {
 	return script
 }
 
-func writeSVG(c *cli.Context, hostName, queryId, traceType, stackName string) {
+func writeSVG(c *cli.Command, hostName, queryId, traceType, stackName string) {
 	title := fmt.Sprintf("hostName %s queryId %s (%s) from %s to %s", hostName, queryId, traceType, c.String("date-from"), c.String("date-to"))
 	countName := "samples"
 	if strings.Contains(traceType, "Memory") {
