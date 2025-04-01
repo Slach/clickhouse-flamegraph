@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
 project_name: clickhouse-flamegraph
 before:
   hooks:
@@ -27,8 +29,6 @@ archives:
 nfpms:
   - id: clickhouse-flamegraph
     file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    builds:
-      - clickhouse-flamegraph
     homepage: https://github.com/Slach/clickhouse-flamegraph
     maintainer: Slach <bloodjazman@gmail.com>
     description: command line utility for visualizing clickhouse system.trace_log as flamegraph
@@ -51,4 +51,4 @@ release:
     name: clickhouse-flamegraph
   prerelease: auto
 changelog:
-  skip: false
+  use: git
