@@ -7,12 +7,12 @@ require (
 	github.com/mailru/go-clickhouse/v2 v2.5.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.34.0
-	github.com/urfave/cli/v2 v2.27.6
+	github.com/urfave/cli/v2 v2.27.7
 	github.com/urfave/cli/v3 v3.3.2
 )
 
 require (
-	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
