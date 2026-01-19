@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/mailru/go-clickhouse/v2 v2.5.0
+	github.com/mailru/go-clickhouse/v2 v2.5.1
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.34.0
 	github.com/urfave/cli/v2 v2.27.7
