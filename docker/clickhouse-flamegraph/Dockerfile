@@ -10,7 +10,7 @@ RUN --mount=type=cache,id=clickhouse-flamegraph-gobuild,target=/root/ GOOS=$( ec
 RUN apk --no-cache add git
 RUN git clone https://github.com/brendangregg/FlameGraph.git /opt/flamegraph/
 
-FROM alpine:latest
+FROM alpine:3.23.3
 RUN apk --no-cache add bash tzdata perl
 COPY --from=builder /opt/flamegraph /opt/flamegraph
 RUN ln -vsf /opt/flamegraph/flamegraph.pl /usr/bin/flamegraph.pl
