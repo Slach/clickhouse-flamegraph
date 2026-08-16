@@ -8,7 +8,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.35.0
 	github.com/urfave/cli/v2 v2.27.7
-	github.com/urfave/cli/v3 v3.8.0
+	github.com/urfave/cli/v3 v3.11.0
 )
 
 require (
